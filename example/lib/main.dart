@@ -1,123 +1,339 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_gl_flutterflow/flutter_gl.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_ring.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const FiberRingTest());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class FiberRingTest extends StatefulWidget {
+  const FiberRingTest({super.key});
 
-  // This widget is the root of your application.
+  @override
+  State<FiberRingTest> createState() => _FiberRingTestState();
+}
+
+class _FiberRingTestState extends State<FiberRingTest> {
+  late FlutterGlPlugin flutterGlPlugin;
+
+  num dpr = 1.0;
+  late double width;
+  late double height;
+
+  Size? screenSize;
+
+  dynamic glProgram;
+  dynamic _vao;
+
+  dynamic sourceTexture;
+  dynamic defaultFramebuffer;
+  dynamic defaultFramebufferTexture;
+
+  int indexCount = 0;
+  int t = DateTime.now().millisecondsSinceEpoch;
+  bool _glReady = false;
+
+  int _uMatrixLocation = -1;
+
+  Timer? _spinTimer;
+
+  Future<void> initPlatformState() async {
+    width = screenSize!.width;
+    height = width;
+
+    flutterGlPlugin = FlutterGlPlugin();
+
+    Map<String, dynamic> options = {
+      "antialias": true,
+      "alpha": false,
+      "width": width.toInt(),
+      "height": height.toInt(),
+      "dpr": dpr,
+    };
+
+    await flutterGlPlugin.initialize(options: options);
+
+    setState(() {});
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      setup();
+    });
+  }
+
+  Future<void> setup() async {
+    if (!kIsWeb) {
+      await flutterGlPlugin.prepareContext();
+      setupDefaultFBO();
+      sourceTexture = defaultFramebufferTexture;
+    }
+
+    setState(() {});
+
+    prepare();
+
+    setState(() {
+      _glReady = true;
+    });
+
+    // Auto-spin so the cube's 3D shape is visible without manual taps.
+    _spinTimer = Timer.periodic(const Duration(milliseconds: 40), (_) {
+      render();
+    });
+  }
+
+  void initSize(BuildContext context) {
+    if (screenSize != null) return;
+
+    final mq = MediaQuery.of(context);
+    final size = mq.size;
+
+    if (size.width == 0 || size.height == 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+
+    screenSize = size;
+    dpr = mq.devicePixelRatio;
+
+    initPlatformState();
+  }
+
+  @override
+  void dispose() {
+    _spinTimer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+      home: Scaffold(
+        appBar: AppBar(
+          title: const Text('flutter_fiber — Section 2.1 Ring test'),
+        ),
+        body: Builder(
+          builder: (BuildContext context) {
+            initSize(context);
+            return SingleChildScrollView(child: _build(context));
+          },
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
     );
+  }
+
+  Widget _build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: width,
+          height: width,
+          color: Colors.black,
+          child: Builder(builder: (BuildContext context) {
+            if (kIsWeb) {
+              return flutterGlPlugin.isInitialized
+                  ? HtmlElementView(
+                      viewType: flutterGlPlugin.textureId!.toString())
+                  : Container();
+            } else {
+              return flutterGlPlugin.isInitialized
+                  ? Texture(textureId: flutterGlPlugin.textureId!)
+                  : Container();
+            }
+          }),
+        ),
+      ],
+    );
+  }
+
+  void setupDefaultFBO() {
+    final gl = flutterGlPlugin.gl;
+    int glWidth = (width * dpr).toInt();
+    int glHeight = (height * dpr).toInt();
+
+    defaultFramebuffer = gl.createFramebuffer();
+    defaultFramebufferTexture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+
+    gl.bindTexture(gl.TEXTURE_2D, defaultFramebufferTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, glWidth, glHeight, 0, gl.RGBA,
+        gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, defaultFramebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+        gl.TEXTURE_2D, defaultFramebufferTexture, 0);
+  }
+
+  void render() {
+    final gl = flutterGlPlugin.gl;
+
+    int current = DateTime.now().millisecondsSinceEpoch;
+
+    gl.viewport(0, 0, (width * dpr).toInt(), (height * dpr).toInt());
+
+    gl.clearColor(0.05, 0.05, 0.08, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    final angle = (current - t) / 1000.0;
+    final matrix = _rotationY(angle);
+    gl.uniformMatrix4fv(_uMatrixLocation, false, Float32Array.fromList(matrix));
+
+    gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_SHORT, 0);
+
+    gl.finish();
+
+    if (!kIsWeb) {
+      flutterGlPlugin.updateTexture(sourceTexture);
+    }
+  }
+
+  /// Column-major 4x4 rotation matrix around the Y axis.
+  List<double> _rotationY(double radians) {
+    final c = cos(radians);
+    final s = sin(radians);
+    return [
+      c, 0, -s, 0,
+      0, 1, 0, 0,
+      s, 0, c, 0,
+      0, 0, 0, 1,
+    ];
+  }
+
+  void prepare() {
+    final gl = flutterGlPlugin.gl;
+
+    String version = "300 es";
+    if (!kIsWeb) {
+      if (Platform.isMacOS || Platform.isWindows) {
+        version = "150";
+      }
+    }
+
+    var vs = """#version $version
+#define attribute in
+#define varying out
+attribute vec3 a_Position;
+uniform mat4 u_Matrix;
+void main() {
+    gl_Position = u_Matrix * vec4(a_Position, 1.0);
+}
+    """;
+
+    var fs = """#version $version
+out highp vec4 pc_fragColor;
+#define gl_FragColor pc_fragColor
+
+void main() {
+  gl_FragColor = vec4(0.2, 0.8, 1.0, 1.0);
+}
+    """;
+
+    if (!initShaders(gl, vs, fs)) {
+      print('Failed to initialize shaders.');
+      return;
+    }
+
+    _uMatrixLocation = gl.getUniformLocation(glProgram, 'u_Matrix');
+
+    indexCount = initVertexBuffers(gl);
+    if (indexCount < 0) {
+      print('Failed to set the positions of the vertices');
+      return;
+    }
+  }
+
+  int initVertexBuffers(gl) {
+    final ring = Fiber3DRing();
+    var dim = 3;
+
+    var vertices = Float32Array.fromList(ring.positions);
+    var indices = Uint16Array.fromList(ring.indices);
+
+    _vao = gl.createVertexArray();
+    gl.bindVertexArray(_vao);
+
+    var vertexBuffer = gl.createBuffer();
+    if (vertexBuffer == null) {
+      print('Failed to create the vertex buffer object');
+      return -1;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+
+    if (kIsWeb) {
+      gl.bufferData(
+          gl.ARRAY_BUFFER, vertices.length, vertices, gl.STATIC_DRAW);
+    } else {
+      gl.bufferData(gl.ARRAY_BUFFER, vertices.lengthInBytes, vertices,
+          gl.STATIC_DRAW);
+    }
+
+    var a_Position = gl.getAttribLocation(glProgram, 'a_Position');
+    if (a_Position < 0) {
+      print('Failed to get the storage location of a_Position');
+      return -1;
+    }
+
+    gl.vertexAttribPointer(
+        a_Position, dim, gl.FLOAT, false, Float32List.bytesPerElement * 3, 0);
+    gl.enableVertexAttribArray(a_Position);
+
+    var indexBuffer = gl.createBuffer();
+    if (indexBuffer == null) {
+      print('Failed to create the index buffer object');
+      return -1;
+    }
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+
+    if (kIsWeb) {
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices.length, indices,
+          gl.STATIC_DRAW);
+    } else {
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices.lengthInBytes, indices,
+          gl.STATIC_DRAW);
+    }
+
+    return ring.indices.length;
+  }
+
+  bool initShaders(gl, vsSource, fsSource) {
+    var vertexShader = makeShader(gl, vsSource, gl.VERTEX_SHADER);
+    var fragmentShader = makeShader(gl, fsSource, gl.FRAGMENT_SHADER);
+
+    glProgram = gl.createProgram();
+
+    gl.attachShader(glProgram, vertexShader);
+    gl.attachShader(glProgram, fragmentShader);
+    gl.linkProgram(glProgram);
+    var res = gl.getProgramParameter(glProgram, gl.LINK_STATUS);
+    if (res == false || res == 0) {
+      print("Unable to initialize the shader program");
+      return false;
+    }
+
+    gl.useProgram(glProgram);
+
+    return true;
+  }
+
+  dynamic makeShader(gl, src, type) {
+    var shader = gl.createShader(type);
+    gl.shaderSource(shader, src);
+    gl.compileShader(shader);
+    var res = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+    if (res == 0 || res == false) {
+      print("Error compiling shader: ${gl.getShaderInfoLog(shader)}");
+      return;
+    }
+    return shader;
   }
 }

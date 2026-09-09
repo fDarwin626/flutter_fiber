@@ -10,6 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_gl_flutterflow: ^0.0.23
 
 dev_dependencies:
   flutter_test:

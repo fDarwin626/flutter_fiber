@@ -1,30 +1,18 @@
-// This is a basic Flutter widget test.
+// Basic smoke test for the flutter_fiber example app.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// This confirms the app builds and mounts without throwing — full GL
+// rendering behavior is verified visually on-device/emulator, not here,
+// since GL contexts aren't available in the widget-test environment.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:example/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
-
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('FiberRingTest mounts without throwing', (WidgetTester tester) async {
+    await tester.pumpWidget(const FiberRingTest());
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('flutter_fiber — Section 2.5 ring test'), findsOneWidget);
   });
 }
