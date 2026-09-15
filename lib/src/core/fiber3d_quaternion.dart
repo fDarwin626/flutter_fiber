@@ -10,11 +10,19 @@ import 'fiber3d_vector3.dart';
 /// normalization. Slerp/rotateTowards/angleTo (animation-blending only)
 /// and array/JSON serialization are dropped — no animation system or
 /// save/load format exists yet.
+
 class Fiber3DQuaternion {
   double x;
   double y;
   double z;
   double w;
+
+  /// Fired on most mutations — same cross-sync mechanism as
+  /// [Fiber3DMutableVector3.onChange], used by Fiber3DObject to keep
+  /// rotation (Euler) in sync when the quaternion is changed directly
+  /// (e.g. via rotateOnAxis/applyQuaternion), not just the other way
+  /// around.
+  void Function()? onChange;
 
   Fiber3DQuaternion([this.x = 0, this.y = 0, this.z = 0, this.w = 1]);
 
@@ -25,6 +33,7 @@ class Fiber3DQuaternion {
     this.y = y;
     this.z = z;
     this.w = w;
+    onChange?.call();
   }
 
   void copy(Fiber3DQuaternion q) {
@@ -32,6 +41,7 @@ class Fiber3DQuaternion {
     y = q.y;
     z = q.z;
     w = q.w;
+    onChange?.call();
   }
 
   Fiber3DQuaternion clone() => Fiber3DQuaternion(x, y, z, w);
@@ -43,10 +53,14 @@ class Fiber3DQuaternion {
     w = 1;
   }
 
-  /// Sets this quaternion from Euler angles (radians), XYZ order — the
+  /// Sets this quaternion from Euler angles (radians), XYZ order the
   /// only order flutter_fiber v1 supports (three.js supports 6; a
   /// configurable rotation order isn't in the PRD's surface).
-  void setFromEuler(double ex, double ey, double ez) {
+  ///
+  /// [notify] defaults to true; Fiber3DObject passes false when this is
+  /// called from its own rotation-changed handler, to avoid an infinite
+  /// notify loop between rotation and quaternion.
+  void setFromEuler(double ex, double ey, double ez, {bool notify = true}) {
     final c1 = cos(ex / 2), c2 = cos(ey / 2), c3 = cos(ez / 2);
     final s1 = sin(ex / 2), s2 = sin(ey / 2), s3 = sin(ez / 2);
 
@@ -54,8 +68,9 @@ class Fiber3DQuaternion {
     y = c1 * s2 * c3 - s1 * c2 * s3;
     z = c1 * c2 * s3 + s1 * s2 * c3;
     w = c1 * c2 * c3 - s1 * s2 * s3;
-  }
 
+    if (notify) onChange?.call();
+  }
   void setFromAxisAngle(Fiber3DVector3 axis, double angle) {
     final halfAngle = angle / 2;
     final s = sin(halfAngle);
@@ -64,8 +79,9 @@ class Fiber3DQuaternion {
     y = axis.y * s;
     z = axis.z * s;
     w = cos(halfAngle);
-  }
 
+    onChange?.call();
+  }
   /// Sets this quaternion from a rotation matrix. Assumes the upper 3x3
   /// of [m] is a pure (unscaled) rotation.
   void setFromRotationMatrix(Fiber3DMatrix4 m) {
@@ -151,16 +167,16 @@ class Fiber3DQuaternion {
       z *= l;
       w *= l;
     }
+    onChange?.call();
   }
 
-  /// Inverts this quaternion in place (assumes unit length — conjugate
-  /// only, matching three.js's `invert()`).
+  /// Inverts this quaternion in place (assumes unit length conjugate
   void invert() {
     x *= -1;
     y *= -1;
     z *= -1;
+    onChange?.call();
   }
-
   void multiply(Fiber3DQuaternion q) => multiplyQuaternions(clone(), q);
 
   void premultiply(Fiber3DQuaternion q) => multiplyQuaternions(q, clone());
@@ -173,5 +189,7 @@ class Fiber3DQuaternion {
     y = ay * bw + aw * by + az * bx - ax * bz;
     z = az * bw + aw * bz + ax * by - ay * bx;
     w = aw * bw - ax * bx - ay * by - az * bz;
+
+    onChange?.call();
   }
 }

@@ -1,5 +1,7 @@
 import 'dart:math';
 import 'fiber3d_vector3.dart';
+import 'fiber3d_mutable_vector3.dart';
+import 'fiber3d_quaternion.dart';
 
 /// A 4x4 matrix, stored in column-major order matching three.js's Matrix4
 /// internal layout exactly this makes porting its matrix math a direct,
@@ -28,6 +30,16 @@ class Fiber3DMatrix4 {
     elements[12] = x;
     elements[13] = y;
     elements[14] = z;
+  }
+
+  /// Post-multiplies this matrix by [m] (this = this * m).
+  void multiply(Fiber3DMatrix4 m) {
+    multiplyMatrices(clone(), m);
+  }
+
+  /// Pre-multiplies this matrix by [m] (this = m * this).
+  void premultiply(Fiber3DMatrix4 m) {
+    multiplyMatrices(m, clone());
   }
 
   /// Ported from three.js's Matrix4.multiplyMatrices.
@@ -220,10 +232,111 @@ class Fiber3DMatrix4 {
     te[6] = yz;
     te[10] = zz;
   }
+  /// Sets this matrix to the transformation composed of the given
+  /// position, rotation (quaternion), and scale. Ported from three.js's
+  /// Matrix4.compose.
+  void compose(
+    Fiber3DMutableVector3 position,
+    Fiber3DQuaternion quaternion,
+    Fiber3DMutableVector3 scale,
+  ) {
+    final te = elements;
+
+    final x = quaternion.x, y = quaternion.y, z = quaternion.z, w = quaternion.w;
+    final x2 = x + x, y2 = y + y, z2 = z + z;
+    final xx = x * x2, xy = x * y2, xz = x * z2;
+    final yy = y * y2, yz = y * z2, zz = z * z2;
+    final wx = w * x2, wy = w * y2, wz = w * z2;
+
+    final sx = scale.x, sy = scale.y, sz = scale.z;
+
+    te[0] = (1 - (yy + zz)) * sx;
+    te[1] = (xy + wz) * sx;
+    te[2] = (xz - wy) * sx;
+    te[3] = 0;
+
+    te[4] = (xy - wz) * sy;
+    te[5] = (1 - (xx + zz)) * sy;
+    te[6] = (yz + wx) * sy;
+    te[7] = 0;
+
+    te[8] = (xz + wy) * sz;
+    te[9] = (yz - wx) * sz;
+    te[10] = (1 - (xx + yy)) * sz;
+    te[11] = 0;
+
+    te[12] = position.x;
+    te[13] = position.y;
+    te[14] = position.z;
+    te[15] = 1;
+  }
+
+  /// The determinant of the upper 3x3, assuming an affine matrix (bottom
+  /// row [0,0,0,1]) — cheaper than a full 4x4 determinant. Ported from
+  /// three.js's Matrix4.determinantAffine.
+  double determinantAffine() {
+    final te = elements;
+    final n11 = te[0], n12 = te[4], n13 = te[8];
+    final n21 = te[1], n22 = te[5], n23 = te[9];
+    final n31 = te[2], n32 = te[6], n33 = te[10];
+
+    return n11 * (n22 * n33 - n23 * n32) -
+        n12 * (n21 * n33 - n23 * n31) +
+        n13 * (n21 * n32 - n22 * n31);
+  }
+
+  /// Decomposes this matrix into position, rotation (quaternion), and
+  /// scale, writing the results into the given out-parameters. Ported
+  /// from three.js's Matrix4.decompose.
+  void decompose(
+    Fiber3DMutableVector3 position,
+    Fiber3DQuaternion quaternion,
+    Fiber3DMutableVector3 scale,
+  ) {
+    final te = elements;
+
+    position.x = te[12];
+    position.y = te[13];
+    position.z = te[14];
+
+    final det = determinantAffine();
+
+    if (det == 0) {
+      scale.set(1, 1, 1);
+      quaternion.identityReset();
+      return;
+    }
+
+    var sx = sqrt(te[0] * te[0] + te[1] * te[1] + te[2] * te[2]);
+    final sy = sqrt(te[4] * te[4] + te[5] * te[5] + te[6] * te[6]);
+    final sz = sqrt(te[8] * te[8] + te[9] * te[9] + te[10] * te[10]);
+
+    if (det < 0) sx = -sx;
+
+    final rotationOnly = Fiber3DMatrix4.fromList(elements);
+    final invSX = 1 / sx, invSY = 1 / sy, invSZ = 1 / sz;
+
+    rotationOnly.elements[0] *= invSX;
+    rotationOnly.elements[1] *= invSX;
+    rotationOnly.elements[2] *= invSX;
+
+    rotationOnly.elements[4] *= invSY;
+    rotationOnly.elements[5] *= invSY;
+    rotationOnly.elements[6] *= invSY;
+
+    rotationOnly.elements[8] *= invSZ;
+    rotationOnly.elements[9] *= invSZ;
+    rotationOnly.elements[10] *= invSZ;
+
+    quaternion.setFromRotationMatrix(rotationOnly);
+
+    scale.x = sx;
+    scale.y = sy;
+    scale.z = sz;
+  }
 
   /// Transforms a point by this matrix (with perspective divide),
-  /// returning [x, y, z]. Useful for tests and for the raycasting work
-  /// coming next in Section 5.
+
   List<double> transformPoint(double x, double y, double z) {
     final te = elements;
     final w = te[3] * x + te[7] * y + te[11] * z + te[15];

@@ -2,26 +2,52 @@ import 'dart:math';
 import 'fiber3d_vector3.dart';
 
 class Fiber3DMutableVector3 {
-  double x;
-  double y;
-  double z;
+  double _x;
+  double _y;
+  double _z;
 
+  /// Called whenever x, y, or z changes via a setter (including `+=`,
+  /// which Dart desugars to a getter-then-setter call) or via [set].
+  /// Used by Fiber3DObject to keep rotation (Euler) and its internal
+  /// quaternion in sync, mirroring three.js's Vector3/Euler `_onChange`
+  /// pattern — same mechanism, same reason.
+  void Function()? onChange;
 
-  Fiber3DMutableVector3([this.x = 0, this.y = 0, this.z = 0]);
+  Fiber3DMutableVector3([double x = 0, double y = 0, double z = 0])
+      : _x = x, _y = y, _z = z;
 
-  Fiber3DMutableVector3.zero() : x = 0, y = 0, z = 0;
-  
-  Fiber3DMutableVector3.all(double value) : x = value, y = value, z = value;
+  Fiber3DMutableVector3.zero() : _x = 0, _y = 0, _z = 0;
+
+  Fiber3DMutableVector3.all(double value) : _x = value, _y = value, _z = value;
+
+  double get x => _x;
+  set x(double value) {
+    _x = value;
+    onChange?.call();
+  }
+
+  double get y => _y;
+  set y(double value) {
+    _y = value;
+    onChange?.call();
+  }
+
+  double get z => _z;
+  set z(double value) {
+    _z = value;
+    onChange?.call();
+  }
 
   void set(double x, double y, double z) {
-    this.x = x;
-    this.y = y;
-    this.z = z;
+    _x = x;
+    _y = y;
+    _z = z;
+    onChange?.call();
   }
   void copy(Fiber3DMutableVector3 v) {
-    x = v.x;
-    y = v.y;
-    z = v.z;
+    _x = v.x;
+    _y = v.y;
+    _z = v.z;
   }
 
   void add(Fiber3DMutableVector3 v) {

@@ -2,6 +2,8 @@ import 'dart:math';
 import '../core/fiber3d_vector3.dart';
 import '../core/fiber3d_matrix4.dart';
 import '../core/fiber3d_ray.dart';
+import '../core/fiber3d_mutable_vector3.dart';
+import '../core/fiber3d_quaternion.dart';
 
 /// A camera using perspective projection.
 ///
@@ -46,18 +48,28 @@ class Fiber3DCamera {
     return m;
   }
 
-  /// The camera's world transform (rotation from lookAt + position).
-  ///
-  /// See the class-level note on why this composes lookAt's rotation
-  /// directly with position rather than going through a quaternion, the
-  /// way three.js's Object3D-based Camera does.
+  /// The camera's world transform, composed through a real quaternion —
+  /// reconciled with Fiber3DObject's architecture now that
+  /// Fiber3DQuaternion/Fiber3DMatrix4.compose exist. lookAt uses the
+  /// (eye, target) argument order, matching three.js's Object3D.lookAt
+  /// camera branch (non-camera objects use the opposite order — see the
+  /// note in Fiber3DObject.lookAt).
   Fiber3DMatrix4 get worldMatrix {
+    final rotationMatrix = Fiber3DMatrix4();
+    rotationMatrix.lookAt(position, target, up);
+
+    final q = Fiber3DQuaternion();
+    q.setFromRotationMatrix(rotationMatrix);
+
     final world = Fiber3DMatrix4();
-    world.lookAt(position, target, up);
-    world.setPosition(position.x, position.y, position.z);
+    world.compose(
+      Fiber3DMutableVector3(position.x, position.y, position.z),
+      q,
+      Fiber3DMutableVector3.all(1),
+    );
     return world;
   }
-
+  
   /// The view matrix — inverse of the camera's world transform.
   Fiber3DMatrix4 get viewMatrix {
     final view = worldMatrix;
