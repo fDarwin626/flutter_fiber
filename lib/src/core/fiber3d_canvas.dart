@@ -2,12 +2,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_fiber/src/core/fiber3d_matrix4.dart';
 import 'dart:io';
 import 'package:flutter_gl_flutterflow/flutter_gl.dart';
 import '../camera/fiber3d_camera.dart';
 import '../camera/fiber3d_orbit_controls.dart';
 import '../material/fiber3d_pbr_shader.dart';
 import 'fiber3d_vector3.dart';
+import 'dart:math';
+import '../material/fiber3d_edge_shader.dart';
 
 /// Signature for a per-frame callback registered with [Fiber3DCanvas].
 ///
@@ -120,13 +123,13 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     }
 
     _compileShader();
+    _compileEdgeShader();
 
     if (!mounted) return;
     setState(() {
       _glReady = true;
     });
   }
-
   // --- Shader compilation/caching (compiled once per canvas, reused by
   // every mesh not recompiled per draw call) ---
 
@@ -211,6 +214,41 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
         gl.getUniformLocation(glProgram, 'u_PointLightDecay');
   }
 
+
+  dynamic edgeGlProgram;
+  int aEdgePositionLocation = -1;
+  int uEdgeModelMatrixLocation = -1;
+  int uEdgeViewMatrixLocation = -1;
+  int uEdgeProjectionMatrixLocation = -1;
+  int uEdgeColorLocation = -1;
+
+  void _compileEdgeShader() {
+    final gl = _glPlugin!.gl;
+    final version = _glslVersion();
+
+    final vs = _makeShader(gl, Fiber3DEdgeShader.vertex(version), gl.VERTEX_SHADER);
+    final fs = _makeShader(gl, Fiber3DEdgeShader.fragment(version), gl.FRAGMENT_SHADER);
+
+    edgeGlProgram = gl.createProgram();
+    gl.attachShader(edgeGlProgram, vs);
+    gl.attachShader(edgeGlProgram, fs);
+    gl.linkProgram(edgeGlProgram);
+
+    final linked = gl.getProgramParameter(edgeGlProgram, gl.LINK_STATUS);
+    if (linked == false || linked == 0) {
+      // ignore: avoid_print
+      print("Fiber3DCanvas: edge shader program failed to link");
+      return;
+    }
+
+    aEdgePositionLocation = gl.getAttribLocation(edgeGlProgram, 'a_Position');
+    uEdgeModelMatrixLocation = gl.getUniformLocation(edgeGlProgram, 'u_ModelMatrix');
+    uEdgeViewMatrixLocation = gl.getUniformLocation(edgeGlProgram, 'u_ViewMatrix');
+    uEdgeProjectionMatrixLocation =
+        gl.getUniformLocation(edgeGlProgram, 'u_ProjectionMatrix');
+    uEdgeColorLocation = gl.getUniformLocation(edgeGlProgram, 'u_EdgeColor');
+  }
+
   dynamic _makeShader(dynamic gl, String src, dynamic type) {
     final shader = gl.createShader(type);
     gl.shaderSource(shader, src);
@@ -249,6 +287,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
 
   late Fiber3DCamera _camera;
   Fiber3DOrbitControls? _orbitControls;
+  late Fiber3DMatrix4 _lastProjection = Fiber3DMatrix4();
   bool _orbiting = false;
 
   /// The camera currently in effect — reflects live orbit/zoom state when
@@ -334,11 +373,39 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
           gl.STATIC_DRAW);
     }
 
+       dynamic lineIndexBuffer;
+    var lineIndexCount = 0;
+
+    final material = meshState.widget.material;
+    final bool wantsEdgeBuffer =
+        material.wireframe == true || meshState.widget.showEdges == true;
+    if (wantsEdgeBuffer) {
+      final lineIndices = <int>[];      
+      for (var i = 0; i + 2 < indices.length; i += 3) {
+        final a = indices[i], b = indices[i + 1], c = indices[i + 2];
+        lineIndices.addAll([a, b, b, c, c, a]);
+      }
+
+      lineIndexBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineIndexBuffer);
+      final lineIdxArray = Uint16Array.fromList(lineIndices);
+      if (kIsWeb) {
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lineIdxArray.length,
+            lineIdxArray, gl.STATIC_DRAW);
+      } else {
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lineIdxArray.lengthInBytes,
+            lineIdxArray, gl.STATIC_DRAW);
+      }
+      lineIndexCount = lineIndices.length;
+    }
+
     final buffers = _MeshBuffers(
       positionBuffer: positionBuffer,
       normalBuffer: normalBuffer,
       indexBuffer: indexBuffer,
       indexCount: indices.length,
+      lineIndexBuffer: lineIndexBuffer,
+      lineIndexCount: lineIndexCount,
     );
     _meshBufferCache[meshState] = buffers;
     return buffers;
@@ -353,16 +420,26 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     gl.viewport(0, 0, glWidth, glHeight);
 
     gl.enable(gl.DEPTH_TEST);
-    gl.clearColor(0.05, 0.05, 0.08, 1.0);
+    gl.clearColor(1.0, 1.0, 1.0, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     gl.useProgram(glProgram);
 
-    // Camera uniforms (shared across all meshes this frame).
+    final runtimeAspect = _glSize!.width / _glSize!.height;
+    final projection = Fiber3DMatrix4();
+    final top = _camera.near * tan(_camera.fov * pi / 360.0);
+    final height = 2 * top;
+    final width = runtimeAspect * height;
+    final left = -0.5 * width;
+    projection.makePerspective(
+        left, left + width, top, top - height, _camera.near, _camera.far);
+
+    _lastProjection = projection;
+
     gl.uniformMatrix4fv(uViewMatrixLocation, false,
         Float32Array.fromList(_camera.viewMatrix.elements));
-    gl.uniformMatrix4fv(uProjectionMatrixLocation, false,
-        Float32Array.fromList(_camera.projectionMatrix.elements));
+    gl.uniformMatrix4fv(
+        uProjectionMatrixLocation, false, Float32Array.fromList(projection.elements));    
     gl.uniform3f(uCameraPositionLocation, _camera.position.x,
         _camera.position.y, _camera.position.z);
 
@@ -471,8 +548,55 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     gl.vertexAttribPointer(aNormalLocation, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(aNormalLocation);
 
+    final wireframeOnly = material.wireframe == true;
+
+    if (wireframeOnly && buffers.lineIndexBuffer != null) {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.lineIndexBuffer);
+      gl.drawElements(
+          gl.LINES, buffers.lineIndexCount, gl.UNSIGNED_SHORT, 0);
+      return;
+    }
+
+    // Standard filled draw. Polygon offset pushes the filled faces
+    // slightly back in depth so the edge overlay (drawn next) can sit
+    // visually in front without z-fighting — the standard technique for
+    // this exact "shaded + visible wireframe" look.
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(1, 1);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indexBuffer);
     gl.drawElements(gl.TRIANGLES, buffers.indexCount, gl.UNSIGNED_SHORT, 0);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+
+    if (meshState.widget.showEdges == true && buffers.lineIndexBuffer != null) {
+      _drawEdgeOverlay(gl, meshState, buffers);
+    }
+  }
+
+  void _drawEdgeOverlay(dynamic gl, dynamic meshState, _MeshBuffers buffers) {
+    if (edgeGlProgram == null) return;
+
+    gl.useProgram(edgeGlProgram);
+
+    final modelMatrix = meshState.transform.matrixWorld;
+    gl.uniformMatrix4fv(uEdgeModelMatrixLocation, false,
+        Float32Array.fromList(modelMatrix.elements));
+    gl.uniformMatrix4fv(uEdgeViewMatrixLocation, false,
+        Float32Array.fromList(_camera.viewMatrix.elements));
+    gl.uniformMatrix4fv(uEdgeProjectionMatrixLocation, false,
+        Float32Array.fromList(_lastProjection.elements));
+
+    // A dark neutral edge color, matching the reference look (not pure
+    // black, so edges read as structure rather than a harsh outline).
+    gl.uniform3f(uEdgeColorLocation, 0.85, 0.92, 0.98);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.positionBuffer);
+    gl.vertexAttribPointer(aEdgePositionLocation, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(aEdgePositionLocation);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.lineIndexBuffer);
+    gl.drawElements(gl.LINES, buffers.lineIndexCount, gl.UNSIGNED_SHORT, 0);
+
+    gl.useProgram(glProgram);
   }
   VoidCallback registerFrameCallback(Fiber3DFrameCallback callback) {
     _frameCallbacks.add(callback);
@@ -640,15 +764,21 @@ class _MeshBuffers {
   final dynamic indexBuffer;
   final int indexCount;
 
+  /// Present only when the material requested wireframe rendering —
+  /// each source triangle (a,b,c) contributes 3 line-index pairs
+  /// (a-b, b-c, c-a), drawn with GL_LINES instead of GL_TRIANGLES.
+  final dynamic lineIndexBuffer;
+  final int lineIndexCount;
+
   _MeshBuffers({
     required this.positionBuffer,
     required this.normalBuffer,
     required this.indexBuffer,
     required this.indexCount,
+    this.lineIndexBuffer,
+    this.lineIndexCount = 0,
   });
-
 }
-
 mixin Fiber3DFrameCallbackMixin<T extends StatefulWidget> on State<T> {
   VoidCallback? _unregister;
 

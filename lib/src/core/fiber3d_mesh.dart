@@ -31,6 +31,8 @@ class Fiber3DMesh extends StatefulWidget {
   /// reasonable default is used.
   final double hitRadius;
 
+  final bool showEdges;
+
   const Fiber3DMesh({
     super.key,
     required this.geometry,
@@ -40,8 +42,8 @@ class Fiber3DMesh extends StatefulWidget {
     this.onPan,
     this.onPinch,
     this.hitRadius = 1.0,
+    this.showEdges = true,
   });
-
   @override
   State<Fiber3DMesh> createState() => Fiber3DMeshState();
 }
