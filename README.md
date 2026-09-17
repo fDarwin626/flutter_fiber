@@ -124,6 +124,7 @@ Each demo clip is captured straight from that example app.
 ### Box
 
 <video src="assets/cube.mp4" width="360" controls></video>
+https://github.com/user-attachments/assets/816d9703-a490-42a3-a230-9df9afd35db4
 
 ```dart
 Fiber3DBox(width: 1.4, height: 1.4, depth: 1.4)
@@ -544,3 +545,5 @@ MIT free to use, modify, and ship in commercial products. See [LICENSE](LICENSE)
 ## Author
 
 Built by **Darwin** ([CoCoNuT-sTuDiOs](https://github.com/CoCoNuT-sTuDiOs)).
+
+
