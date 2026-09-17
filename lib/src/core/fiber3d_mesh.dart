@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'fiber3d_canvas.dart';
+import '../renderer/fiber3d_canvas.dart';
 import 'fiber3d_group.dart';
 import 'fiber3d_object.dart';
 import 'fiber3d_vector3.dart';

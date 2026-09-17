@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_fiber/src/core/fiber3d_canvas.dart';
+import 'package:flutter_fiber/src/renderer/fiber3d_canvas.dart';
 import 'package:flutter_fiber/src/core/fiber3d_vector3.dart';
 import 'package:flutter_fiber/src/camera/fiber3d_camera.dart';
 

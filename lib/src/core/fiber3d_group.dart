@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_fiber/src/core/fiber3d_canvas.dart';
+import 'package:flutter_fiber/src/renderer/fiber3d_canvas.dart';
 import 'fiber3d_object.dart';
 
 /// A grouping container with no geometry/material of its own — lets

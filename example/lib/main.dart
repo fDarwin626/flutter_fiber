@@ -1,42 +1,101 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_fiber/src/core/fiber3d_canvas.dart';
+import 'package:flutter_fiber/src/renderer/fiber3d_canvas.dart';
 import 'package:flutter_fiber/src/core/fiber3d_mesh.dart';
 import 'package:flutter_fiber/src/core/fiber3d_vector3.dart';
 import 'package:flutter_fiber/src/material/fiber3d_standard_material.dart';
 import 'package:flutter_fiber/src/light/fiber3d_ambient_light.dart';
 import 'package:flutter_fiber/src/light/fiber3d_point_light.dart';
 import 'package:flutter_fiber/src/camera/fiber3d_camera.dart';
-import 'package:flutter_fiber/src/geometry/fiber3d_cone.dart';
-import 'package:flutter_fiber/src/geometry/fiber3d_icosahedron.dart';
-import 'package:flutter_fiber/src/geometry/fiber3d_dodecahedron.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_box.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_capsule.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_circle.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_cone.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_cylinder.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_dodecahedron.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_icosahedron.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_lathe.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_plane.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_ring.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_sphere.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_torus.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_torus_knot.dart';
 
-// ----- TOGGLE THIS to flip every shape between "see the structure" and
-// "the real deal" ------------------------------------------------------
-const bool kShowWires = false;
-// -----------------------------------------------------------------------
 
 void main() {
-  runApp(const FiberNewShapesTest());
+  runApp(const FiberShapeGallery());
 }
 
-class FiberNewShapesTest extends StatelessWidget {
-  const FiberNewShapesTest({super.key});
+/// One entry in the gallery: a name to display and a factory that builds
+/// the geometry fresh each time it's selected (so switching shapes never
+/// reuses stale geometry data).
+class _ShapeEntry {
+  final String name;
+  final dynamic Function() build;
+  const _ShapeEntry(this.name, this.build);
+}
+
+final List<_ShapeEntry> _shapes = [
+  _ShapeEntry('Box', () => Fiber3DBox(width: 1.4, height: 1.4, depth: 1.4)),
+  _ShapeEntry('Capsule', () => Fiber3DCapsule(radius: 0.6, height: 1.2)), 
+  _ShapeEntry('Circle', () => Fiber3DCircle(radius: 1.2, segments: 32)),
+  _ShapeEntry('Cone', () => Fiber3DCone(radius: 1.0, height: 1.8, radialSegments: 32)),
+  _ShapeEntry('Cylinder', () => Fiber3DCylinder(radiusTop: 0.8, radiusBottom: 0.8, height: 1.8)),
+  _ShapeEntry('Dodecahedron', () => Fiber3DDodecahedron(radius: 1.1)),
+  _ShapeEntry('Icosahedron', () => Fiber3DIcosahedron(radius: 1.2)),
+  _ShapeEntry(
+    'Lathe (basket)',
+    () => Fiber3DLathe(
+      points: const [
+        [0.0, -0.9],
+        [0.5, -0.85],
+        [0.85, -0.5],
+        [0.95, 0.0],
+        [0.85, 0.5],
+        [0.5, 0.85],
+      ],
+      segments: 24,
+    ),
+  ),
+  _ShapeEntry('Plane', () => Fiber3DPlane(width: 2, height: 2)),
+  _ShapeEntry('Ring', () => Fiber3DRing(innerRadius: 0.5, outerRadius: 1.2)),
+  _ShapeEntry('Sphere', () => Fiber3DSphere(radius: 1.2)),
+  _ShapeEntry('Torus (donut)', () => Fiber3DTorus(radius: 1.0, tube: 0.4)),
+  _ShapeEntry('TorusKnot', () => Fiber3DTorusKnot(radius: 1.0, tube: 0.3)),
+];
+
+class FiberShapeGallery extends StatefulWidget {
+  const FiberShapeGallery({super.key});
 
   @override
+  State<FiberShapeGallery> createState() => _FiberShapeGalleryState();
+}
+
+class _FiberShapeGalleryState extends State<FiberShapeGallery> {
+  int _index = 0;
+  bool _showWires = false;
+  bool _flatShading = true;
+
+  void _next() => setState(() => _index = (_index + 1) % _shapes.length);
+  void _prev() =>
+      setState(() => _index = (_index - 1 + _shapes.length) % _shapes.length);
+  void _toggleWires() => setState(() => _showWires = !_showWires);
+  void _toggleFlatShading() => setState(() => _flatShading = !_flatShading);
+  @override
   Widget build(BuildContext context) {
+    final entry = _shapes[_index];
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('flutter_fiber new shapes batch test'),
+          title: Text('flutter_fiber gallery: ${entry.name} '
+              '(${_index + 1}/${_shapes.length})'),
           backgroundColor: const Color(0xFF828282),
         ),
         body: Fiber3DCanvas(
           backgroundColor: 0x828282,
           camera: Fiber3DCamera(
-            position: const Fiber3DVector3(0, 0, 10),
+            position: const Fiber3DVector3(0, 0, 5),
             target: const Fiber3DVector3.zero(),
           ),
           orbitEnabled: true,
@@ -53,174 +112,105 @@ class FiberNewShapesTest extends StatelessWidget {
               position: const Fiber3DVector3(-3, 2, -2),
             ),
           ],
-          children: const [
-            _PositionedSpinner(
-              offsetX: -4,
-              child: _ConeShape(),
-            ),
-            _PositionedSpinner(
-              offsetX: -2,
-              child: _IcosahedronShape(),
-            ),
-            _PositionedSpinner(
-              offsetX: 0,
-              child: _DodecahedronShape(),
-            ),
-            _PositionedSpinner(
-              offsetX: 2,
-              child: _CircleShape(),
-            ),
-            _PositionedSpinner(
-              offsetX: 4.5,
-              child: _LatheShape(),
+          // Keying by index forces a fresh Fiber3DMesh (and fresh
+          // geometry) each time the shape changes, rather than reusing
+          // the old mesh's registered buffers.
+
+          children: [
+               _GalleryShape(
+              key: ValueKey(_index),
+              entry: entry,
+              showWires: _showWires,
+              flatShading: _flatShading,
             ),
           ],
+          ),
+                  bottomNavigationBar: BottomAppBar(
+          color: const Color(0xFF828282),
+          padding: EdgeInsets.zero,
+          height: 140,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+               Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _prev,
+                        icon: const Icon(Icons.arrow_back),
+                        label: const Text('Prev'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _next,
+                        icon: const Icon(Icons.arrow_forward),
+                        label: const Text('Next'),
+                      ),
+                    ),
+                  ],
+                ),
+               const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _toggleWires,
+                        icon: Icon(_showWires ? Icons.grid_off : Icons.grid_on),
+                        label: Text(_showWires ? 'Wires: On' : 'Wires: Off'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _toggleFlatShading,
+                        icon: Icon(_flatShading ? Icons.diamond : Icons.circle),
+                        label: Text(_flatShading ? 'Flat' : 'Smooth'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
+
       ),
     );
   }
 }
 
-// Shared spin behavior + one-time positioning along X, reused for every
-// shape in this test row.
-class _PositionedSpinner extends StatefulWidget {
-  final double offsetX;
-  final Widget child;
-  const _PositionedSpinner({required this.offsetX, required this.child});
+class _GalleryShape extends StatelessWidget {
+  final _ShapeEntry entry;
+  final bool showWires;
+  final bool flatShading;
+  const _GalleryShape({
+    super.key,
+    required this.entry,
+    required this.showWires,
+    required this.flatShading,
+  });
 
-  @override
-  State<_PositionedSpinner> createState() => _PositionedSpinnerState();
-}
-
-class _PositionedSpinnerState extends State<_PositionedSpinner> {
-  @override
-  Widget build(BuildContext context) => widget.child;
-}
-
-class _ConeShape extends StatelessWidget {
-  const _ConeShape();
   @override
   Widget build(BuildContext context) {
     return Fiber3DMesh(
-      geometry: Fiber3DCone(radius: 0.8, height: 1.5, radialSegments: 32),
-      material: const Fiber3DStandardMaterial(
-        color: 0xff6633,
+      geometry: entry.build(),
+      material: Fiber3DStandardMaterial(
+        color: 0xCC2952,
         roughness: 0.5,
         metalness: 0.2,
-        flatShading: true,
+        flatShading: flatShading,
         wireframe: false,
       ),
-      showEdges: kShowWires,
-      hitRadius: 1.0,
+      showEdges: showWires,
+      hitRadius: 1.5,
       onFrame: (elapsed, delta, transform) {
-        transform.position.set(-4, 0, 0);
         final t = delta.inMicroseconds / 1e6;
         transform.rotation.y += t;
-      },
-    );
-  }
-}
-
-class _IcosahedronShape extends StatelessWidget {
-  const _IcosahedronShape();
-  @override
-  Widget build(BuildContext context) {
-    return Fiber3DMesh(
-      geometry: Fiber3DIcosahedron(radius: 1.0, detail: 0),
-      material: const Fiber3DStandardMaterial(
-        color: 0x33cc66,
-        roughness: 0.5,
-        metalness: 0.2,
-        flatShading: true,
-        wireframe: false,
-      ),
-      showEdges: kShowWires,
-      hitRadius: 1.0,
-      onFrame: (elapsed, delta, transform) {
-        transform.position.set(-2, 0, 0);
-        final t = delta.inMicroseconds / 1e6;
-        transform.rotation.y += t;
-      },
-    );
-  }
-}
-
-class _DodecahedronShape extends StatelessWidget {
-  const _DodecahedronShape();
-  @override
-  Widget build(BuildContext context) {
-    return Fiber3DMesh(
-      geometry: Fiber3DDodecahedron(radius: 1.0, detail: 0),
-      material: const Fiber3DStandardMaterial(
-        color: 0xcc33aa,
-        roughness: 0.5,
-        metalness: 0.2,
-        flatShading: true,
-        wireframe: false,
-      ),
-      showEdges: kShowWires,
-      hitRadius: 1.0,
-      onFrame: (elapsed, delta, transform) {
-        transform.position.set(0, 0, 0);
-        final t = delta.inMicroseconds / 1e6;
-        transform.rotation.y += t;
-      },
-    );
-  }
-}
-
-class _CircleShape extends StatelessWidget {
-  const _CircleShape();
-  @override
-  Widget build(BuildContext context) {
-    return Fiber3DMesh(
-      geometry: Fiber3DCircle(radius: 1.0, segments: 32),
-      material: const Fiber3DStandardMaterial(
-        color: 0x3399ff,
-        roughness: 0.5,
-        metalness: 0.2,
-        flatShading: true,
-        wireframe: false,
-      ),
-      showEdges: kShowWires,
-      hitRadius: 1.0,
-      onFrame: (elapsed, delta, transform) {
-        transform.position.set(2, 0, 0);
-        final t = delta.inMicroseconds / 1e6;
-        transform.rotation.y += t;
-      },
-    );
-  }
-}
-
-class _LatheShape extends StatelessWidget {
-  const _LatheShape();
-  @override
-  Widget build(BuildContext context) {
-    return Fiber3DMesh(
-      geometry: Fiber3DLathe(
-        points: const [
-          [0.0, -0.9],
-          [0.6, -0.6],
-          [0.75, 0.0],
-          [0.55, 0.6],
-          [0.0, 0.9],
-        ],
-        segments: 24,
-      ),
-      material: const Fiber3DStandardMaterial(
-        color: 0xffcc33,
-        roughness: 0.5,
-        metalness: 0.2,
-        flatShading: true,
-        wireframe: false,
-      ),
-      showEdges: kShowWires,
-      hitRadius: 1.2,
-      onFrame: (elapsed, delta, transform) {
-        transform.position.set(4.5, 0, 0);
-        final t = delta.inMicroseconds / 1e6;
-        transform.rotation.y += t;
+        transform.rotation.x += t * 0.4;
       },
     );
   }

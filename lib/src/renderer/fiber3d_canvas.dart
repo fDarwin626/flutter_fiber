@@ -9,7 +9,7 @@ import 'package:visibility_detector/visibility_detector.dart';
 import '../camera/fiber3d_camera.dart';
 import '../camera/fiber3d_orbit_controls.dart';
 import '../material/fiber3d_pbr_shader.dart';
-import 'fiber3d_vector3.dart';
+import '../core/fiber3d_vector3.dart';
 import 'dart:math';
 import '../material/fiber3d_edge_shader.dart';
 
@@ -473,9 +473,31 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   final Map<dynamic, _MeshBuffers> _meshBufferCache = {};
 
   _MeshBuffers? _buffersFor(dynamic meshState) {
-    final cached = _meshBufferCache[meshState];
-    if (cached != null) return cached;
+    final material = meshState.widget.material;
+    final wantsEdges =
+        material.wireframe == true || meshState.widget.showEdges == true;
+    final wantsFlat = material.flatShading == true;
 
+    final cached = _meshBufferCache[meshState];
+    if (cached != null) {
+      // Rebuild if edge/flat-shading settings changed since these buffers
+      // were built e.g. wireframe toggled on for a mesh that had no
+      // line-index buffer generated at first build.
+      final cacheStillValid =
+          cached.builtWithEdges == wantsEdges &&
+          cached.builtWithFlatShading == wantsFlat;
+      if (cacheStillValid) return cached;
+
+      // Stale free the old GPU buffers before rebuilding.
+      final gl = _glPlugin!.gl;
+      gl.deleteBuffer(cached.positionBuffer);
+      gl.deleteBuffer(cached.normalBuffer);
+      gl.deleteBuffer(cached.indexBuffer);
+      if (cached.lineIndexBuffer != null) {
+        gl.deleteBuffer(cached.lineIndexBuffer);
+      }
+      _meshBufferCache.remove(meshState);
+    }
     final gl = _glPlugin!.gl;
     final geometry = meshState.widget.geometry;
 
@@ -493,8 +515,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
 
     if (positions == null || normals == null || indices == null) return null;
 
-    final material = meshState.widget.material;
-
+    // Flat shading: one normal per triangle instead of interpolated
     // Flat shading: one normal per triangle instead of interpolated
     // shared vertex normals, so adjacent triangles show a hard lighting
     // discontinuity at their shared edge (the faceted look). Requires
@@ -596,9 +617,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     dynamic lineIndexBuffer;
     var lineIndexCount = 0;
 
-    final bool wantsEdgeBuffer =
-        material.wireframe == true || meshState.widget.showEdges == true;
-    if (wantsEdgeBuffer) {
+    if (wantsEdges) {
       final lineIndices = <int>[];
       for (var i = 0; i + 2 < indices.length; i += 3) {
         final a = indices[i], b = indices[i + 1], c = indices[i + 2];
@@ -633,6 +652,8 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       indexCount: indices.length,
       lineIndexBuffer: lineIndexBuffer,
       lineIndexCount: lineIndexCount,
+      builtWithEdges: wantsEdges,
+      builtWithFlatShading: wantsFlat,
     );
     _meshBufferCache[meshState] = buffers;
     return buffers;
@@ -973,7 +994,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     plugin.dispose();
   }
 
-  _Hittable? _gestureTarget;  
+  _Hittable? _gestureTarget;
   @override
   Widget build(BuildContext context) {
     return _Fiber3DCanvasScope(
@@ -1006,67 +1027,67 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
               }
             },
             child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapUp: (details) {
-              final hit = _closestHitAt(details.localPosition, size);
-              hit?.onTap?.call();
-            },
-            // Flutter's scale gesture subsumes single-finger pan: a
-            // one-finger drag reports scale ~1.0 with a real
-            // focalPointDelta; a two-finger pinch reports both a
-            // changing scale and a delta. onPan and onScale can't both
-            // be registered on one GestureDetector (conflicting
-            // recognizers), so this one recognizer drives both
-            // onPan, onPinch, and when the gesture starts on empty
-            // space with orbitEnabled — camera orbit/zoom.
-            onScaleStart: (details) {
-              _gestureTarget = _closestHitAt(details.localFocalPoint, size);
-              _orbiting = _gestureTarget == null && _orbitControls != null;
-              _gestureTarget?.onPinchStart?.call();
-              _gestureActive = true;
-              _wakeTicker();
-            },
-            onScaleUpdate: (details) {
-              if (_orbiting) {
-                _orbitControls!.rotate(
-                  details.focalPointDelta.dx,
-                  details.focalPointDelta.dy,
-                  size.height,
-                );
-                if (details.pointerCount >= 2) {
-                  _orbitControls!.zoom(details.scale);
+              behavior: HitTestBehavior.opaque,
+              onTapUp: (details) {
+                final hit = _closestHitAt(details.localPosition, size);
+                hit?.onTap?.call();
+              },
+              // Flutter's scale gesture subsumes single-finger pan: a
+              // one-finger drag reports scale ~1.0 with a real
+              // focalPointDelta; a two-finger pinch reports both a
+              // changing scale and a delta. onPan and onScale can't both
+              // be registered on one GestureDetector (conflicting
+              // recognizers), so this one recognizer drives both
+              // onPan, onPinch, and when the gesture starts on empty
+              // space with orbitEnabled — camera orbit/zoom.
+              onScaleStart: (details) {
+                _gestureTarget = _closestHitAt(details.localFocalPoint, size);
+                _orbiting = _gestureTarget == null && _orbitControls != null;
+                _gestureTarget?.onPinchStart?.call();
+                _gestureActive = true;
+                _wakeTicker();
+              },
+              onScaleUpdate: (details) {
+                if (_orbiting) {
+                  _orbitControls!.rotate(
+                    details.focalPointDelta.dx,
+                    details.focalPointDelta.dy,
+                    size.height,
+                  );
+                  if (details.pointerCount >= 2) {
+                    _orbitControls!.zoom(details.scale);
+                  }
+                  setState(() {
+                    _camera = _orbitControls!.camera;
+                  });
+                  return;
                 }
-                setState(() {
-                  _camera = _orbitControls!.camera;
-                });
-                return;
-              }
 
-              _gestureTarget?.onPan?.call(details.focalPointDelta);
-              if (details.pointerCount >= 2) {
-                _gestureTarget?.onPinch?.call(details.scale);
-              }
-            },
-            onScaleEnd: (_) {
-              _gestureTarget = null;
-              _orbiting = false;
-              _gestureActive = false;
-            },
-            child: Stack(
-              children: [
-                if (_glReady && _glPlugin != null)
-                  SizedBox(
-                    width: size.width,
-                    height: size.height,
-                    child: kIsWeb
-                        ? HtmlElementView(
-                            viewType: _glPlugin!.textureId!.toString(),
-                          )
-                        : Texture(textureId: _glPlugin!.textureId!),
-                  ),
-                ...widget.children,
-              ],
-            ),
+                _gestureTarget?.onPan?.call(details.focalPointDelta);
+                if (details.pointerCount >= 2) {
+                  _gestureTarget?.onPinch?.call(details.scale);
+                }
+              },
+              onScaleEnd: (_) {
+                _gestureTarget = null;
+                _orbiting = false;
+                _gestureActive = false;
+              },
+              child: Stack(
+                children: [
+                  if (_glReady && _glPlugin != null)
+                    SizedBox(
+                      width: size.width,
+                      height: size.height,
+                      child: kIsWeb
+                          ? HtmlElementView(
+                              viewType: _glPlugin!.textureId!.toString(),
+                            )
+                          : Texture(textureId: _glPlugin!.textureId!),
+                    ),
+                  ...widget.children,
+                ],
+              ),
             ),
           );
         },
@@ -1108,6 +1129,13 @@ class _MeshBuffers {
   final dynamic lineIndexBuffer;
   final int lineIndexCount;
 
+  /// The edge/flat-shading settings these buffers were built with
+  /// compared against the mesh's current settings each frame so a live
+  /// toggle (e.g. showEdges flipped after first build) triggers a rebuild
+  /// instead of silently reusing stale buffers.
+  final bool builtWithEdges;
+  final bool builtWithFlatShading;
+
   _MeshBuffers({
     required this.positionBuffer,
     required this.normalBuffer,
@@ -1115,6 +1143,8 @@ class _MeshBuffers {
     required this.indexCount,
     this.lineIndexBuffer,
     this.lineIndexCount = 0,
+    required this.builtWithEdges,
+    required this.builtWithFlatShading,
   });
 }
 
