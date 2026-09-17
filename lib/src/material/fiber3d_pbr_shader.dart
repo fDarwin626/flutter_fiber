@@ -45,6 +45,8 @@ uniform vec3 u_Emissive;
 uniform float u_EmissiveIntensity;
 
 uniform vec3 u_AmbientLightColor;
+uniform vec3 u_SkyColor;
+uniform vec3 u_GroundColor;
 
 uniform int u_PointLightCount;
 uniform vec3 u_PointLightPosition[$maxPointLights];
@@ -137,11 +139,18 @@ void main() {
         directDiffuse += irradiance * diffuseBRDF * (vec3(1.0) - F);
     }
 
+    // Tier 1 environment lighting (HemisphereLight-style fake env):
+    // approximates the surrounding environment as two flat colors
+    // blended by the surface normal's vertical component, so every
+    // surface gets some light based on which way it faces rather than
+    // only faces pointed at a point light. Near-zero cost, no texture.
+    vec3 envColor = mix(u_GroundColor, u_SkyColor, N.y * 0.5 + 0.5);
+    vec3 envDiffuse = envColor * diffuseColor;
+
     vec3 ambientDiffuse = u_AmbientLightColor * diffuseColor;
     vec3 emissive = u_Emissive * u_EmissiveIntensity;
 
-    vec3 outgoing = directDiffuse + directSpecular + ambientDiffuse + emissive;
-
+    vec3 outgoing = directDiffuse + directSpecular + ambientDiffuse + envDiffuse + emissive;
     gl_FragColor = vec4(outgoing, 1.0);
 }
 """;

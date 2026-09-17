@@ -1,12 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'fiber3d_canvas.dart';
+import 'fiber3d_group.dart';
 import 'fiber3d_object.dart';
 import 'fiber3d_vector3.dart';
 
 /// A renderable mesh: a geometry, a material, and its own transform
 /// (position/rotation/scale via [transform]).
 ///
-/// Geometry and material are typed `dynamic` deliberately — flutter_fiber's
+/// Geometry and material are typed `dynamic` deliberately flutter_fiber's
 /// 5 geometries and 2 materials are plain data classes with no shared base
 /// type, and retrofitting an inheritance hierarchy onto already-tested
 /// code isn't worth it for what the renderer needs (a runtime type check
@@ -14,7 +15,7 @@ import 'fiber3d_vector3.dart';
 /// (Fiber3DCanvas's render loop) pattern-matches on the concrete type.
 ///
 /// Registers itself with the ancestor [Fiber3DCanvas] on mount and
-/// unregisters on dispose — same lifecycle-safe pattern as onFrame and
+/// unregisters on dispose same lifecycle-safe pattern as onFrame and
 /// hittable registration, so a mesh removed from the tree can never leak
 /// into the render loop.
 class Fiber3DMesh extends StatefulWidget {
@@ -33,6 +34,14 @@ class Fiber3DMesh extends StatefulWidget {
 
   final bool showEdges;
 
+  /// Built-in pinch-to-scale. Off by default — an explicit opt-in, not a
+  /// forced behavior. When true, the mesh handles clamped scaling itself
+  /// (anchored to scale at gesture start, so it can't compound across
+  /// ticks), rather than relying on the caller's own onPinch math.
+  final bool enablePinchScale;
+  final double minPinchScale;
+  final double maxPinchScale;
+
   const Fiber3DMesh({
     super.key,
     required this.geometry,
@@ -43,6 +52,9 @@ class Fiber3DMesh extends StatefulWidget {
     this.onPinch,
     this.hitRadius = 1.0,
     this.showEdges = true,
+    this.enablePinchScale = false,
+    this.minPinchScale = 0.3,
+    this.maxPinchScale = 3.0,
   });
   @override
   State<Fiber3DMesh> createState() => Fiber3DMeshState();
@@ -54,10 +66,25 @@ class Fiber3DMeshState extends State<Fiber3DMesh> {
   /// matching the PRD's own usage pattern.
   final Fiber3DObject transform = Fiber3DObject();
 
-  VoidCallback? _unregisterFrame;
+    VoidCallback? _unregisterFrame;
   VoidCallback? _unregisterHittable;
   VoidCallback? _unregisterMesh;
 
+  double _gestureStartScale = 1.0;
+
+  void _onPinchStart() {
+    // Anchor to the scale as it stood before this gesture — scale from
+    // ScaleUpdateDetails is cumulative-since-gesture-start, so this is
+    // what stops it compounding across gestures or overshooting.
+    _gestureStartScale = transform.scale.x;
+  }
+
+  void _onPinch(double scale) {
+    final target = (_gestureStartScale * scale)
+        .clamp(widget.minPinchScale, widget.maxPinchScale);
+    transform.scale.set(target, target, target);
+    widget.onPinch?.call(scale);
+  }
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -69,14 +96,27 @@ class Fiber3DMeshState extends State<Fiber3DMesh> {
     _unregisterMesh?.call();
     _unregisterMesh = canvasState?.registerMesh(this);
 
+    // If nested inside a Fiber3DGroup, attach this mesh's transform as a
+    // child of the group's transform so the group's own transform
+    // composes into this mesh's matrixWorld automatically. Registration
+    // in the canvas's flat _meshes set (above) is unaffected — draw-loop
+    // iteration stays flat; only transform.parent carries the hierarchy.
+    final parentGroup = Fiber3DGroupScope.maybeOf(context);
+    if (parentGroup != null && transform.parent != parentGroup.transform) {
+      parentGroup.transform.add(transform);
+    }
+    
     if (widget.onFrame != null) {
       _unregisterFrame?.call();
       _unregisterFrame = canvasState?.registerFrameCallback((elapsed, delta) {
         widget.onFrame!(elapsed, delta, transform);
       });
     }
-    
-    if (widget.onTap != null || widget.onPan != null || widget.onPinch != null) {
+    final wantsHitTest = widget.onTap != null ||
+        widget.onPan != null ||
+        widget.onPinch != null ||
+        widget.enablePinchScale;
+    if (wantsHitTest) {
       _unregisterHittable?.call();
       _unregisterHittable = canvasState?.registerHittable(
         getPosition: () {
@@ -86,9 +126,11 @@ class Fiber3DMeshState extends State<Fiber3DMesh> {
         radius: widget.hitRadius,
         onTap: widget.onTap,
         onPan: widget.onPan,
-        onPinch: widget.onPinch,
+        onPinchStart: widget.enablePinchScale ? _onPinchStart : null,
+        onPinch: widget.enablePinchScale ? _onPinch : widget.onPinch,
       );
-    }
+    }    
+
   }
 
   @override

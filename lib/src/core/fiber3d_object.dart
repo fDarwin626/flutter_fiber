@@ -1,3 +1,4 @@
+
 import 'dart:math';
 import 'fiber3d_vector3.dart';
 import 'fiber3d_mutable_vector3.dart';
@@ -19,7 +20,7 @@ class Fiber3DObject {
   /// The "up" direction, used by [lookAt].
   final Fiber3DMutableVector3 up = Fiber3DMutableVector3(0, 1, 0);
 
-  /// Pivot point for rotation/scale — when set, rotation and scale are
+  /// Pivot point for rotation/scale when set, rotation and scale are
   /// applied around this point instead of the object's origin.
   Fiber3DMutableVector3? pivot;
 
