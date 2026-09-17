@@ -131,7 +131,7 @@ Fiber3DBox(width: 1.4, height: 1.4, depth: 1.4)
 
 ### Capsule
 
-<video src="assets/capsule.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/9d2b4dad-f03f-4cd6-8216-a97838ce9b29" width="360" controls></video>
 
 ```dart
 Fiber3DCapsule(radius: 0.6, height: 1.2)
@@ -139,7 +139,7 @@ Fiber3DCapsule(radius: 0.6, height: 1.2)
 
 ### Cone
 
-<video src="assets/cone.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/a23affa7-493a-43ea-854e-f88dac19707f" width="360" controls></video>
 
 ```dart
 Fiber3DCone(radius: 1.0, height: 1.8, radialSegments: 32)
@@ -147,7 +147,7 @@ Fiber3DCone(radius: 1.0, height: 1.8, radialSegments: 32)
 
 ### Cylinder
 
-<video src="assets/cylinder.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/859d089f-9436-456b-8189-a18da881dfc9" width="360" controls></video>
 
 ```dart
 Fiber3DCylinder(radiusTop: 0.8, radiusBottom: 0.8, height: 1.8)
@@ -155,7 +155,7 @@ Fiber3DCylinder(radiusTop: 0.8, radiusBottom: 0.8, height: 1.8)
 
 ### Icosahedron
 
-<video src="assets/icosahedron.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/b825db80-2876-48e8-8c6d-84785b1700b4" width="360" controls></video>
 
 ```dart
 Fiber3DIcosahedron(radius: 1.2)
@@ -163,7 +163,7 @@ Fiber3DIcosahedron(radius: 1.2)
 
 ### Lathe (revolved profile)
 
-<video src="assets/lathe.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/75ecacc4-ebfb-4939-80b9-91d33568a1b3" width="360" controls></video>
 
 Revolves a 2D profile around the Y axis the same technique three.js uses for vases, bowls, and baskets. A profile that closes back to `x = 0` at both ends produces a solid lens shape; leaving one end open away from the axis produces an open vessel.
 
@@ -183,7 +183,7 @@ Fiber3DLathe(
 
 ### Ring
 
-<video src="assets/ring.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/f4a7d81c-bc89-493a-b9a0-cb8e293097a6" width="360" controls></video>
 
 ```dart
 Fiber3DRing(innerRadius: 0.5, outerRadius: 1.2)
@@ -191,7 +191,7 @@ Fiber3DRing(innerRadius: 0.5, outerRadius: 1.2)
 
 ### Sphere
 
-<video src="assets/sphere.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/aaf411ed-df9d-47b1-ac77-889bddb667a5" width="360" controls></video>
 
 ```dart
 Fiber3DSphere(radius: 1.2)
@@ -199,7 +199,7 @@ Fiber3DSphere(radius: 1.2)
 
 ### Torus (donut)
 
-<video src="assets/torus.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/df60846a-32e1-4297-9cef-9152884d3b5b" width="360" controls></video>
 
 ```dart
 Fiber3DTorus(radius: 1.0, tube: 0.4)
@@ -207,7 +207,7 @@ Fiber3DTorus(radius: 1.0, tube: 0.4)
 
 ### Torus Knot
 
-<video src="assets/torus_knot.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/dfd2ec3f-2d49-4994-b9f6-e4eaa122659b" width="360" controls></video>
 
 ```dart
 Fiber3DTorusKnot(radius: 1.0, tube: 0.3)
@@ -244,7 +244,7 @@ Fiber3DGroup(
 
 Shapes can nest inside groups, and a mesh with no `onFrame` of its own simply rides along with its parent group's motion as shown below on this toy train example using shapes from flutter_fiber.
 
-<video src="assets/toy_train.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/9b6d6020-faa5-4cb9-8de5-ed99fd13e251" width="360" controls></video>
 
 ```dart
 import 'dart:math';
