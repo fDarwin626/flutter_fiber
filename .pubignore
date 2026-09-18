@@ -1,0 +1,13 @@
+# Demo videos — docs/GitHub-only, not part of the published package.
+assets/*.mp4
+
+# Example app build artifacts — not source, shouldn't ship.
+example/build/
+example/android/app/libs/
+example/android/.gradle/
+example/.dart_tool/
+example/**/build/
+
+# Standard excludes
+.dart_tool/
+build/
