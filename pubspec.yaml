@@ -1,7 +1,7 @@
 name: flutter_fiber
-description: "A native, declarative Flutter 3D package inspired by react-three-fiber. Procedural geometry, PBR lighting, grouping, and animation — built from Dart data, no asset pipeline, no WebView."
+description: "A native, declarative Flutter 3D package inspired by react-three-fiber. Procedural geometry, PBR lighting, grouping, and animation built from Dart data, no asset pipeline, no WebView."
 version: 0.1.0
-homepage: https://github.com/fDarwin626/flutter_fiber
+homepage: https://flutter-fiber-docs.vercel.app/
 repository: https://github.com/fDarwin626/flutter_fiber
 
 environment:
