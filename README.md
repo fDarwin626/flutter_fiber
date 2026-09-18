@@ -1,5 +1,4 @@
 
-https://github.com/user-attachments/assets/2b65460f-473b-4497-82cb-09ebc36fc8a4
 <p align="center">
   <img src="assets/flutter_dart_logo.png" width="220" alt="flutter_fiber logo">
 </p>
@@ -125,7 +124,7 @@ Each demo clip is captured straight from that example app.
 
 ### Box
 
-<video src="https://github.com/user-attachments/assets/ce1a0b56-faf9-40d5-b16f-cbae11334131" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/8e1a693f-2c81-47b6-a6fb-3d7d3bc94268" width="360" controls></video>
 
 ```dart
 Fiber3DBox(width: 1.4, height: 1.4, depth: 1.4)
@@ -133,7 +132,7 @@ Fiber3DBox(width: 1.4, height: 1.4, depth: 1.4)
 
 ### Capsule
 
-<video src="https://github.com/user-attachments/assets/1e72753f-5aa3-4faf-8ee1-169ab46f2c8b" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/4b59071b-a49e-491c-80f3-d2c899e23857" width="360" controls></video>
 
 ```dart
 Fiber3DCapsule(radius: 0.6, height: 1.2)
@@ -141,7 +140,7 @@ Fiber3DCapsule(radius: 0.6, height: 1.2)
 
 ### Cone
 
-<video src="https://github.com/user-attachments/assets/43ff47b9-b991-42a2-8693-a91af73e65a5" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/b68b4793-f1fd-4be1-aaf6-c8ece8298f61" width="360" controls></video>
 
 ```dart
 Fiber3DCone(radius: 1.0, height: 1.8, radialSegments: 32)
@@ -149,7 +148,7 @@ Fiber3DCone(radius: 1.0, height: 1.8, radialSegments: 32)
 
 ### Cylinder
 
-<video src="https://github.com/user-attachments/assets/66495649-3746-4abc-b3fe-495cf84becb5" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/c9e0a24a-c6f8-4330-b93a-b1500c5e9e04" width="360" controls></video>
 
 ```dart
 Fiber3DCylinder(radiusTop: 0.8, radiusBottom: 0.8, height: 1.8)
@@ -157,7 +156,7 @@ Fiber3DCylinder(radiusTop: 0.8, radiusBottom: 0.8, height: 1.8)
 
 ### Icosahedron
 
-<video src="https://github.com/user-attachments/assets/60946e90-6d3f-492e-8f87-02e80ea6506b" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/e1e24a44-f776-45db-92fb-becec6c1f6f3" width="360" controls></video>
 
 ```dart
 Fiber3DIcosahedron(radius: 1.2)
@@ -185,7 +184,7 @@ Fiber3DLathe(
 
 ### Ring
 
-<video src="https://github.com/user-attachments/assets/4773f4e4-bece-4abd-95bb-52c9cbe32bf9" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/7600fe0b-d485-4d13-9651-9f6e28e46c87" width="360" controls></video>
 
 ```dart
 Fiber3DRing(innerRadius: 0.5, outerRadius: 1.2)
@@ -193,7 +192,7 @@ Fiber3DRing(innerRadius: 0.5, outerRadius: 1.2)
 
 ### Sphere
 
-<video src="https://github.com/user-attachments/assets/d74fd94d-7f27-4987-bae2-14599278d597" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/026a30f9-8059-4deb-82ff-b6cc53c5f834" width="360" controls></video>
 
 ```dart
 Fiber3DSphere(radius: 1.2)
@@ -201,7 +200,7 @@ Fiber3DSphere(radius: 1.2)
 
 ### Torus (donut)
 
-<video src="https://github.com/user-attachments/assets/96f57bf3-0381-4c81-83e2-772d19f79211" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/0d18ed35-e73a-4e68-b9fc-08560c52c887" width="360" controls></video>
 
 ```dart
 Fiber3DTorus(radius: 1.0, tube: 0.4)
