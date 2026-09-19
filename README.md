@@ -46,8 +46,24 @@ dependencies:
   flutter_fiber: ^<latest_version>
 ```
 
-**Platform support:** Android is the primary, fully supported target. iOS is experimental and physical-device-only (no simulator support Apple deprecated OpenGL ES; this mirrors the same caveat React Native's own OpenGL-based 3D libraries document).
+**Platform support:** Android is the primary, fully supported platform. iOS is experimental and physical-device-only (no simulator support — Apple deprecated OpenGL ES; this mirrors the same caveat React Native's own OpenGL-based 3D libraries document).
 
+**Required Android manifest fix (temporary, will be removed in a future release):** flutter_fiber's native OpenGL binding bundles its own small manifest, which currently conflicts with your app's `android:label`. Until this is fixed upstream, add `tools:replace="android:label"` to your `android/app/src/main/AndroidManifest.xml`'s `<application>` tag, and the `xmlns:tools` namespace to the root `<manifest>` tag:
+
+```xml
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application
+        android:label="your_app_name"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        tools:replace="android:label">
+        <!-- ...rest of your existing <application> content stays unchanged... -->
+    </application>
+</manifest>
+```
+
+Without this, the build fails with a manifest merge error (`Attribute application@label value=(...) is also present at [com.futouapp:threeegl...]`).
 ---
 
 ## Quick start
@@ -56,14 +72,7 @@ A complete, working scene copy this into a fresh Flutter project's `main.dart` a
 
 ```dart
 import 'package:flutter/material.dart';
-import 'package:flutter_fiber/src/renderer/fiber3d_canvas.dart';
-import 'package:flutter_fiber/src/core/fiber3d_mesh.dart';
-import 'package:flutter_fiber/src/core/fiber3d_vector3.dart';
-import 'package:flutter_fiber/src/material/fiber3d_standard_material.dart';
-import 'package:flutter_fiber/src/light/fiber3d_ambient_light.dart';
-import 'package:flutter_fiber/src/light/fiber3d_point_light.dart';
-import 'package:flutter_fiber/src/camera/fiber3d_camera.dart';
-import 'package:flutter_fiber/src/geometry/fiber3d_torus_knot.dart';
+import 'package:flutter_fiber/flutter_fiber.dart';
 
 void main() => runApp(const MyApp());
 
@@ -250,17 +259,7 @@ Shapes can nest inside groups, and a mesh with no `onFrame` of its own simply ri
 ```dart
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_fiber/src/renderer/fiber3d_canvas.dart';
-import 'package:flutter_fiber/src/core/fiber3d_group.dart';
-import 'package:flutter_fiber/src/core/fiber3d_mesh.dart';
-import 'package:flutter_fiber/src/core/fiber3d_vector3.dart';
-import 'package:flutter_fiber/src/material/fiber3d_standard_material.dart';
-import 'package:flutter_fiber/src/light/fiber3d_ambient_light.dart';
-import 'package:flutter_fiber/src/light/fiber3d_point_light.dart';
-import 'package:flutter_fiber/src/camera/fiber3d_camera.dart';
-import 'package:flutter_fiber/src/geometry/fiber3d_box.dart';
-import 'package:flutter_fiber/src/geometry/fiber3d_cone.dart';
-import 'package:flutter_fiber/src/geometry/fiber3d_cylinder.dart';
+import 'package:flutter_fiber/flutter_fiber.dart';
 
 void main() {
   runApp(const FiberTrainDemo());
