@@ -33,6 +33,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.2"
+  coconut_flutter_gl:
+    dependency: transitive
+    description:
+      name: coconut_flutter_gl
+      sha256: "1b9b118477daf4d82925c67d7a2f923561801ea50785d90c92ffbc0ef7a11bd9"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.23"
   collection:
     dependency: transitive
     description:
@@ -76,14 +84,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "0.0.1"
-  flutter_gl_flutterflow:
-    dependency: "direct main"
-    description:
-      path: "../../flutter_gl_flutterflow_reference"
-      relative: true
-    source: path
-    version: "0.0.23"
+    version: "0.1.2"
   flutter_gl_macos_flutterflow:
     dependency: transitive
     description:

@@ -4,7 +4,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_fiber/src/core/fiber3d_matrix4.dart';
 import 'dart:io';
-import 'package:flutter_gl_flutterflow/flutter_gl.dart';
+import 'package:coconut_flutter_gl/flutter_gl.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import '../camera/fiber3d_camera.dart';
 import '../camera/fiber3d_orbit_controls.dart';
