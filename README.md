@@ -1,3 +1,4 @@
+
 <p align="center">
   <img src="assets/flutter_dart_logo.png" width="220" alt="flutter_fiber logo">
 </p>
@@ -123,7 +124,7 @@ Each demo clip is captured straight from that example app.
 
 ### Box
 
-<video src="assets/cube.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/8e1a693f-2c81-47b6-a6fb-3d7d3bc94268" width="360" controls></video>
 
 ```dart
 Fiber3DBox(width: 1.4, height: 1.4, depth: 1.4)
@@ -131,7 +132,7 @@ Fiber3DBox(width: 1.4, height: 1.4, depth: 1.4)
 
 ### Capsule
 
-<video src="assets/capsule.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/4b59071b-a49e-491c-80f3-d2c899e23857" width="360" controls></video>
 
 ```dart
 Fiber3DCapsule(radius: 0.6, height: 1.2)
@@ -139,7 +140,7 @@ Fiber3DCapsule(radius: 0.6, height: 1.2)
 
 ### Cone
 
-<video src="assets/cone.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/b68b4793-f1fd-4be1-aaf6-c8ece8298f61" width="360" controls></video>
 
 ```dart
 Fiber3DCone(radius: 1.0, height: 1.8, radialSegments: 32)
@@ -147,7 +148,7 @@ Fiber3DCone(radius: 1.0, height: 1.8, radialSegments: 32)
 
 ### Cylinder
 
-<video src="assets/cylinder.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/c9e0a24a-c6f8-4330-b93a-b1500c5e9e04" width="360" controls></video>
 
 ```dart
 Fiber3DCylinder(radiusTop: 0.8, radiusBottom: 0.8, height: 1.8)
@@ -155,7 +156,7 @@ Fiber3DCylinder(radiusTop: 0.8, radiusBottom: 0.8, height: 1.8)
 
 ### Icosahedron
 
-<video src="assets/icosahedron.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/e1e24a44-f776-45db-92fb-becec6c1f6f3" width="360" controls></video>
 
 ```dart
 Fiber3DIcosahedron(radius: 1.2)
@@ -163,7 +164,7 @@ Fiber3DIcosahedron(radius: 1.2)
 
 ### Lathe (revolved profile)
 
-<video src="assets/lathe.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/d5401988-18ec-4a5d-b11c-dcac1ab64e8d" width="360" controls></video>
 
 Revolves a 2D profile around the Y axis the same technique three.js uses for vases, bowls, and baskets. A profile that closes back to `x = 0` at both ends produces a solid lens shape; leaving one end open away from the axis produces an open vessel.
 
@@ -183,7 +184,7 @@ Fiber3DLathe(
 
 ### Ring
 
-<video src="assets/ring.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/7600fe0b-d485-4d13-9651-9f6e28e46c87" width="360" controls></video>
 
 ```dart
 Fiber3DRing(innerRadius: 0.5, outerRadius: 1.2)
@@ -191,7 +192,7 @@ Fiber3DRing(innerRadius: 0.5, outerRadius: 1.2)
 
 ### Sphere
 
-<video src="assets/sphere.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/026a30f9-8059-4deb-82ff-b6cc53c5f834" width="360" controls></video>
 
 ```dart
 Fiber3DSphere(radius: 1.2)
@@ -199,7 +200,7 @@ Fiber3DSphere(radius: 1.2)
 
 ### Torus (donut)
 
-<video src="assets/torus.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/0d18ed35-e73a-4e68-b9fc-08560c52c887" width="360" controls></video>
 
 ```dart
 Fiber3DTorus(radius: 1.0, tube: 0.4)
@@ -207,7 +208,7 @@ Fiber3DTorus(radius: 1.0, tube: 0.4)
 
 ### Torus Knot
 
-<video src="assets/torus_knot.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/1945b41d-b29d-44ee-be80-4d14144de1da" width="360" controls></video>
 
 ```dart
 Fiber3DTorusKnot(radius: 1.0, tube: 0.3)
@@ -244,7 +245,7 @@ Fiber3DGroup(
 
 Shapes can nest inside groups, and a mesh with no `onFrame` of its own simply rides along with its parent group's motion as shown below on this toy train example using shapes from flutter_fiber.
 
-<video src="assets/toy_train.mp4" width="360" controls></video>
+<video src="https://github.com/user-attachments/assets/7ecc1140-75af-43ff-af5a-c2e42f4d24d1" width="360" controls></video>
 
 ```dart
 import 'dart:math';
@@ -544,3 +545,5 @@ MIT free to use, modify, and ship in commercial products. See [LICENSE](LICENSE)
 ## Author
 
 Built by **Darwin** ([CoCoNuT-sTuDiOs](https://github.com/CoCoNuT-sTuDiOs)).
+
+
