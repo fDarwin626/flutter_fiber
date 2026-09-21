@@ -1,0 +1,193 @@
+/// Fills the `PhysicalMaterial` struct from the material's factors:
+/// diffuse color/contribution, metalness, a screen-space roughness floor
+/// (specular anti-aliasing), F0/F90 (default 4% dielectric, or IOR based),
+/// and the optional clearcoat, dispersion, retroreflection, iridescence,
+/// sheen and anisotropy setup (all behind their #ifdef guards).
+///
+/// Ported from three.js's `lights_physical_fragment.glsl.js`
+/// (src/renderers/shaders/ShaderChunk/), copied unchanged. Expects
+/// `diffuseColor`, `metalnessFactor`, `roughnessFactor` and
+/// `nonPerturbedNormal` (and `tbn` for anisotropy) to be defined earlier
+/// in main(), and the derivative functions dFdx/dFdy. It does not fill
+/// `material.dfg` or `material.multiScatteringCompensation`; the lights
+/// chunks do.
+const String fiber3dLightsPhysicalFragment = r'''
+PhysicalMaterial material;
+material.diffuseColor = diffuseColor.rgb;
+material.diffuseContribution = diffuseColor.rgb * ( 1.0 - metalnessFactor );
+material.metalness = metalnessFactor;
+
+vec3 dxy = max( abs( dFdx( nonPerturbedNormal ) ), abs( dFdy( nonPerturbedNormal ) ) );
+float geometryRoughness = max( max( dxy.x, dxy.y ), dxy.z );
+
+// GGX width scales with roughness squared; large normal variation needs a linear floor.
+float roughnessFloor = max( 0.4 * sqrt( geometryRoughness ), geometryRoughness );
+
+material.roughness = min( max( roughnessFactor, roughnessFloor ), 1.0 );
+
+#ifdef USE_DIFFUSE_ROUGHNESS
+
+	float diffuseRoughnessFactor = diffuseRoughness;
+
+	#ifdef USE_DIFFUSE_ROUGHNESSMAP
+
+		diffuseRoughnessFactor *= texture2D( diffuseRoughnessMap, vDiffuseRoughnessMapUv ).r;
+
+	#endif
+
+	material.diffuseRoughness = saturate( diffuseRoughnessFactor );
+
+#endif
+
+#ifdef IOR
+
+	material.ior = ior;
+
+	#ifdef USE_SPECULAR
+
+		float specularIntensityFactor = specularIntensity;
+		vec3 specularColorFactor = specularColor;
+
+		#ifdef USE_SPECULAR_COLORMAP
+
+			specularColorFactor *= texture2D( specularColorMap, vSpecularColorMapUv ).rgb;
+
+		#endif
+
+		#ifdef USE_SPECULAR_INTENSITYMAP
+
+			specularIntensityFactor *= texture2D( specularIntensityMap, vSpecularIntensityMapUv ).a;
+
+		#endif
+
+		material.specularF90 = mix( specularIntensityFactor, 1.0, metalnessFactor );
+
+	#else
+
+		float specularIntensityFactor = 1.0;
+		vec3 specularColorFactor = vec3( 1.0 );
+		material.specularF90 = 1.0;
+
+	#endif
+
+	material.specularColor = min( pow2( ( material.ior - 1.0 ) / ( material.ior + 1.0 ) ) * specularColorFactor, vec3( 1.0 ) ) * specularIntensityFactor;
+	material.specularColorBlended = mix( material.specularColor, diffuseColor.rgb, metalnessFactor );
+
+#else
+
+	material.specularColor = vec3( 0.04 );
+	material.specularColorBlended = mix( material.specularColor, diffuseColor.rgb, metalnessFactor );
+	material.specularF90 = 1.0;
+
+#endif
+
+#ifdef USE_CLEARCOAT
+
+	material.clearcoat = clearcoat;
+	material.clearcoatRoughness = clearcoatRoughness;
+	material.clearcoatF0 = vec3( 0.04 );
+	material.clearcoatF90 = 1.0;
+
+	#ifdef USE_CLEARCOATMAP
+
+		material.clearcoat *= texture2D( clearcoatMap, vClearcoatMapUv ).x;
+
+	#endif
+
+	#ifdef USE_CLEARCOAT_ROUGHNESSMAP
+
+		material.clearcoatRoughness *= texture2D( clearcoatRoughnessMap, vClearcoatRoughnessMapUv ).y;
+
+	#endif
+
+	material.clearcoat = saturate( material.clearcoat ); // Burley clearcoat model
+	material.clearcoatRoughness = min( max( material.clearcoatRoughness, roughnessFloor ), 1.0 );
+
+#endif
+
+#ifdef USE_DISPERSION
+
+	material.dispersion = dispersion;
+
+#endif
+
+#ifdef USE_RETROREFLECTION
+
+	material.retroreflectivity = retroreflectivity;
+
+#endif
+
+#ifdef USE_IRIDESCENCE
+
+	material.iridescence = iridescence;
+	material.iridescenceIOR = iridescenceIOR;
+
+	#ifdef USE_IRIDESCENCEMAP
+
+		material.iridescence *= texture2D( iridescenceMap, vIridescenceMapUv ).r;
+
+	#endif
+
+	#ifdef USE_IRIDESCENCE_THICKNESSMAP
+
+		material.iridescenceThickness = (iridescenceThicknessMaximum - iridescenceThicknessMinimum) * texture2D( iridescenceThicknessMap, vIridescenceThicknessMapUv ).g + iridescenceThicknessMinimum;
+
+	#else
+
+		material.iridescenceThickness = iridescenceThicknessMaximum;
+
+	#endif
+
+#endif
+
+#ifdef USE_SHEEN
+
+	material.sheenColor = sheenColor;
+
+	#ifdef USE_SHEEN_COLORMAP
+
+		material.sheenColor *= texture2D( sheenColorMap, vSheenColorMapUv ).rgb;
+
+	#endif
+
+	material.sheenRoughness = clamp( sheenRoughness, 0.0001, 1.0 );
+
+	#ifdef USE_SHEEN_ROUGHNESSMAP
+
+		material.sheenRoughness *= texture2D( sheenRoughnessMap, vSheenRoughnessMapUv ).a;
+
+	#endif
+
+#endif
+
+#ifdef USE_ANISOTROPY
+
+	#ifdef USE_ANISOTROPYMAP
+
+		mat2 anisotropyMat = mat2( anisotropyVector.x, anisotropyVector.y, - anisotropyVector.y, anisotropyVector.x );
+		vec3 anisotropyPolar = texture2D( anisotropyMap, vAnisotropyMapUv ).rgb;
+		vec2 anisotropyV = anisotropyMat * normalize( 2.0 * anisotropyPolar.rg - vec2( 1.0 ) ) * anisotropyPolar.b;
+
+	#else
+
+		vec2 anisotropyV = anisotropyVector;
+
+	#endif
+
+	material.anisotropy = length( anisotropyV );
+
+	if( material.anisotropy == 0.0 ) {
+		anisotropyV = vec2( 1.0, 0.0 );
+	} else {
+		anisotropyV /= material.anisotropy;
+		material.anisotropy = saturate( material.anisotropy );
+	}
+
+	// Roughness along the anisotropy bitangent is the material roughness, while the tangent roughness increases with anisotropy.
+	material.alphaT = mix( pow2( material.roughness ), 1.0, pow2( material.anisotropy ) );
+
+	material.anisotropyT = tbn[ 0 ] * anisotropyV.x + tbn[ 1 ] * anisotropyV.y;
+	material.anisotropyB = tbn[ 1 ] * anisotropyV.x - tbn[ 0 ] * anisotropyV.y;
+
+#endif
+''';
