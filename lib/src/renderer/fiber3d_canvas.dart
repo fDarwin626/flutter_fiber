@@ -10,6 +10,9 @@ import '../camera/fiber3d_camera.dart';
 import '../camera/fiber3d_orbit_controls.dart';
 import '../material/fiber3d_pbr_shader.dart';
 import '../core/fiber3d_vector3.dart';
+import '../core/fiber3d_color.dart';
+import '../core/fiber3d_color_management.dart';
+import 'fiber3d_tone_mapping.dart';
 import 'dart:math';
 import '../material/fiber3d_edge_shader.dart';
 
@@ -56,11 +59,25 @@ class Fiber3DCanvas extends StatefulWidget {
   /// white to match prior behavior.
   final int backgroundColor;
 
-  /// Tier 1 fake environment lighting (HemisphereLight-style) — sky and
+  /// Tier 1 fake environment lighting (HemisphereLight-style) sky and
   /// ground colors blended by surface normal.y. Defaults approximate a
   /// neutral daylight room; pass 0x000000/0x000000 to disable entirely.
   final int skyColor;
   final int groundColor;
+
+  /// When true (default), hex colors are converted to linear space for
+  /// lighting and the final image is sRGB-encoded, like three.js. Set
+  /// false for the v1 look (raw colors, no output encoding). Read once at
+  /// creation.
+  final bool colorManagement;
+
+  /// Tone-mapping operator applied to the final color (three.js
+  /// `renderer.toneMapping`). Read once at creation.
+  final Fiber3DToneMapping toneMapping;
+
+  /// Brightness multiplier used by the tone-mapping operators (three.js
+  /// `renderer.toneMappingExposure`).
+  final double toneMappingExposure;
 
   Fiber3DCanvas({
     super.key,
@@ -71,6 +88,9 @@ class Fiber3DCanvas extends StatefulWidget {
     this.backgroundColor = 0xFFFFFF,
     this.skyColor = 0x87A6C4,
     this.groundColor = 0x3B3A35,
+    this.colorManagement = true,
+    this.toneMapping = Fiber3DToneMapping.none,
+    this.toneMappingExposure = 1.0,
   }) : camera = camera ?? Fiber3DCamera();
 
   double get skyColorR => ((skyColor >> 16) & 0xFF) / 255.0;
@@ -181,6 +201,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   int uPointLightColorLocation = -1;
   int uPointLightDistanceLocation = -1;
   int uPointLightDecayLocation = -1;
+  int uToneMappingExposureLocation = -1;
 
   String _glslVersion() {
     if (kIsWeb) return "300 es";
@@ -199,7 +220,13 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     );
     final fs = _makeShader(
       gl,
-      Fiber3DPbrShader.fragment(version),
+      Fiber3DPbrShader.fragment(
+        version,
+        toneMapping: widget.toneMapping,
+        outputColorSpace: widget.colorManagement
+            ? Fiber3DColorSpace.srgb
+            : Fiber3DColorSpace.linearSrgb,
+      ),
       gl.FRAGMENT_SHADER,
     );
 
@@ -265,6 +292,10 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     uPointLightDecayLocation = gl.getUniformLocation(
       glProgram,
       'u_PointLightDecay',
+    );
+    uToneMappingExposureLocation = gl.getUniformLocation(
+      glProgram,
+      'toneMappingExposure',
     );
   }
 
@@ -706,6 +737,10 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       _camera.position.z,
     );
 
+    if (widget.toneMapping != Fiber3DToneMapping.none) {
+      gl.uniform1f(uToneMappingExposureLocation, widget.toneMappingExposure);
+    }
+
     // Light uniforms.
     _uploadLights(gl);
 
@@ -720,19 +755,20 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     }
   }
 
+    final Fiber3DColor _workingColor = Fiber3DColor();
+
+  Fiber3DColor _linearColor(int hex) => _workingColor.setHex(
+    hex,
+    colorSpace: widget.colorManagement
+        ? Fiber3DColorSpace.srgb
+        : Fiber3DColorSpace.linearSrgb,
+  );
+
   void _uploadLights(dynamic gl) {
-    gl.uniform3f(
-      uSkyColorLocation,
-      widget.skyColorR,
-      widget.skyColorG,
-      widget.skyColorB,
-    );
-    gl.uniform3f(
-      uGroundColorLocation,
-      widget.groundColorR,
-      widget.groundColorG,
-      widget.groundColorB,
-    );
+    final sky = _linearColor(widget.skyColor);
+    gl.uniform3f(uSkyColorLocation, sky.r, sky.g, sky.b);
+    final ground = _linearColor(widget.groundColor);
+    gl.uniform3f(uGroundColorLocation, ground.r, ground.g, ground.b);
     var ambient = const [0.0, 0.0, 0.0];
     final pointPositions = <double>[];
     final pointColors = <double>[];
@@ -742,10 +778,11 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     for (final light in widget.lights) {
       final typeName = light.runtimeType.toString();
       if (typeName == 'Fiber3DAmbientLight') {
+        final c = _linearColor(light.color);
         ambient = [
-          light.r * light.intensity,
-          light.g * light.intensity,
-          light.b * light.intensity,
+          c.r * light.intensity,
+          c.g * light.intensity,
+          c.b * light.intensity,
         ];
       } else if (typeName == 'Fiber3DPointLight' &&
           pointPositions.length < Fiber3DPbrShader.maxPointLights * 3) {
@@ -754,10 +791,11 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
           light.position.y,
           light.position.z,
         ]);
+        final c = _linearColor(light.color);
         pointColors.addAll([
-          light.r * light.intensity,
-          light.g * light.intensity,
-          light.b * light.intensity,
+          c.r * light.intensity,
+          c.g * light.intensity,
+          c.b * light.intensity,
         ]);
         pointDistances.add(light.distance);
         pointDecays.add(light.decay);
@@ -810,15 +848,12 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     final materialType = material.runtimeType.toString();
 
     if (materialType == 'Fiber3DStandardMaterial') {
-      gl.uniform3f(uBaseColorLocation, material.r, material.g, material.b);
+      final base = _linearColor(material.color);
+      gl.uniform3f(uBaseColorLocation, base.r, base.g, base.b);
       gl.uniform1f(uRoughnessLocation, material.roughness);
       gl.uniform1f(uMetalnessLocation, material.metalness);
-      gl.uniform3f(
-        uEmissiveLocation,
-        material.emissiveR,
-        material.emissiveG,
-        material.emissiveB,
-      );
+      final emissive = _linearColor(material.emissive);
+      gl.uniform3f(uEmissiveLocation, emissive.r, emissive.g, emissive.b);
       gl.uniform1f(uEmissiveIntensityLocation, material.emissiveIntensity);
     } else if (materialType == 'Fiber3DBasicMaterial') {
       // Basic material has no lighting response — feed it through as a
@@ -827,7 +862,8 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       gl.uniform3f(uBaseColorLocation, 0, 0, 0);
       gl.uniform1f(uRoughnessLocation, 1.0);
       gl.uniform1f(uMetalnessLocation, 0.0);
-      gl.uniform3f(uEmissiveLocation, material.r, material.g, material.b);
+      final basic = _linearColor(material.color);
+      gl.uniform3f(uEmissiveLocation, basic.r, basic.g, basic.b);
       gl.uniform1f(uEmissiveIntensityLocation, 1.0);
     }
 
@@ -961,13 +997,20 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
 
   /// Releases GPU resources compiled/allocated by this canvas — mesh
   /// buffers, both shader programs, and the default framebuffer's texture
-  /// and depth renderbuffer — since stopping the ticker alone doesn't free
+  /// and depth renderbuffer since stopping the ticker alone doesn't free
   /// GPU memory when this widget leaves the tree.
   void _releaseGlResources() {
     final plugin = _glPlugin;
     if (plugin == null) return;
-    final gl = plugin.gl;
 
+    // Disposed before initialize() finished: there is no GL context yet,
+    // plugin.gl throws a LateInitializationError, and nothing needs releasing.
+    final dynamic gl;
+    try {
+      gl = plugin.gl;
+    } on Error {
+      return;
+    }
     for (final buffers in _meshBufferCache.values) {
       gl.deleteBuffer(buffers.positionBuffer);
       gl.deleteBuffer(buffers.normalBuffer);

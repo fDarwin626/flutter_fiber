@@ -46,7 +46,7 @@ dependencies:
   flutter_fiber: ^<latest_version>
 ```
 
-**Platform support:** Android is the primary, fully supported platform. iOS is experimental and physical-device-only (no simulator support — Apple deprecated OpenGL ES; this mirrors the same caveat React Native's own OpenGL-based 3D libraries document).
+**Platform support:** Android is the primary, fully supported platform. iOS is experimental and physical-device-only (no simulator support Apple deprecated OpenGL ES; this mirrors the same caveat React Native's own OpenGL-based 3D libraries document).
 
 **Required Android manifest fix (temporary, will be removed in a future release):** flutter_fiber's native OpenGL binding bundles its own small manifest, which currently conflicts with your app's `android:label`. Until this is fixed upstream, add `tools:replace="android:label"` to your `android/app/src/main/AndroidManifest.xml`'s `<application>` tag, and the `xmlns:tools` namespace to the root `<manifest>` tag:
 
@@ -326,7 +326,7 @@ class _ToyTrain extends StatelessWidget {
         _Wheel(axleX: 1.0, radius: 0.32, side: 1),
         _Wheel(axleX: 1.0, radius: 0.32, side: -1),
 
-        // Axle 2 (rearmost, under the cab — biggest wheel)
+        // Axle 2 (rearmost, under the cab biggest wheel)
         _Wheel(axleX: -0.9, radius: 0.5, side: 1),
         _Wheel(axleX: -0.9, radius: 0.5, side: -1),
         // Axle 3 (under the boiler)
@@ -362,10 +362,10 @@ class _TrainBody extends StatelessWidget {
 
   }
 }
-/// The fat vertical cylinder standing at the front of the body — the
+/// The fat vertical cylinder standing at the front of the body the
 /// nozzle. Stands upright at the front edge, forming the upright stroke
 /// of the L/7 shape.
-/// The boiler — a horizontal cylinder forming the train's long front
+/// The boiler a horizontal cylinder forming the train's long front
 /// section, joining the cab's front face.
 class _TrainBoiler extends StatelessWidget {
   const _TrainBoiler();
@@ -442,7 +442,7 @@ class _Chimney extends StatelessWidget {
   }
 }
 /// One side-mounted wheel: a cylinder tilted 90° about X so its flat
-/// circular faces point sideways (±Z) instead of up/down — the "real
+/// circular faces point sideways (±Z) instead of up/down the "real
 /// car tire" orientation, sticking out from the body's side. `side` is
 /// +1 (right) or -1 (left). Spins continuously about its own axle.
 class _Wheel extends StatelessWidget {
@@ -478,8 +478,8 @@ class _Wheel extends StatelessWidget {
       ),
       onFrame: (elapsed, delta, transform) {
         final z = side * (bodyHalfDepth + wheelThickness / 2);
-        // Wheel top flush at y=0 — the same ground line the cab and
-        // boiler bottoms sit on — so every wheel looks properly seated
+        // Wheel top flush at y=0 the same ground line the cab and
+        // boiler bottoms sit on so every wheel looks properly seated
         // regardless of its own radius, big or small.
         final y = radius;
         transform.position.set(axleX, y, z);

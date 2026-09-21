@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#828282}</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x828282);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 2000);
+camera.position.set(0, 0, 7.5);
+camera.lookAt(0, 0, 0);
+
+// Same lights and numbers as reference_main.dart.
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+scene.add(new THREE.HemisphereLight(0x87A6C4, 0x3B3A35, 1));
+const p1 = new THREE.PointLight(0xffffff, 3, 0, 2); p1.position.set(3, 4, 5); scene.add(p1);
+const p2 = new THREE.PointLight(0xffffff, 1.5, 0, 2); p2.position.set(-3, 2, -2); scene.add(p2);
+
+const metalness = [0, 0.5, 1];
+const roughness = [0, 0.25, 0.5, 0.75, 1];
+const geo = new THREE.SphereGeometry(0.42, 64, 32);
+roughness.forEach((r, row) => metalness.forEach((m, col) => {
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xCC2952, roughness: r, metalness: m }));
+  mesh.position.set(col - 1, 2 - row, 0);
+  scene.add(mesh);
+}));
+
+function draw() { renderer.render(scene, camera); }
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  draw();
+});
+draw();
+</script>
+</body>
+</html>

@@ -1,5 +1,12 @@
+import '../core/fiber3d_color_management.dart';
+import '../renderer/fiber3d_tone_mapping.dart';
+import 'fiber3d_program_functions.dart';
+import 'fiber3d_shader_chunk.dart';
+import 'shader_chunk/fiber3d_colorspace_pars_fragment.dart';
+import 'shader_chunk/fiber3d_tonemapping_pars_fragment.dart';
+
 class Fiber3DPbrShader {
-  /// GLSL loop bounds must be compile-time constants — this is a real
+  /// GLSL loop bounds must be compile-time constants this is a real
   /// language constraint, not a scope shortcut. three.js works around
   /// the same constraint by compiling a distinct shader per exact light
   /// count; we use one fixed ceiling instead.
@@ -27,7 +34,13 @@ void main() {
 }
 """;
 
-  static String fragment(String version) => """#version $version
+  /// Output settings are baked into the shader at compile time, like
+  /// three.js's program parameters.
+  static String fragment(
+    String version, {
+    Fiber3DToneMapping toneMapping = Fiber3DToneMapping.none,
+    Fiber3DColorSpace outputColorSpace = Fiber3DColorSpace.srgb,
+  }) => Fiber3DShaderChunk.resolveIncludes("""#version $version
 precision highp float;
 out highp vec4 pc_fragColor;
 #define gl_FragColor pc_fragColor
@@ -53,6 +66,8 @@ uniform vec3 u_PointLightPosition[$maxPointLights];
 uniform vec3 u_PointLightColor[$maxPointLights];
 uniform float u_PointLightDistance[$maxPointLights];
 uniform float u_PointLightDecay[$maxPointLights];
+
+${_outputPrefix(toneMapping, outputColorSpace)}
 
 const float PI = 3.14159265359;
 
@@ -152,6 +167,28 @@ void main() {
 
     vec3 outgoing = directDiffuse + directSpecular + ambientDiffuse + envDiffuse + emissive;
     gl_FragColor = vec4(outgoing, 1.0);
+
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
 }
-""";
+""");
+
+  static String _outputPrefix(
+    Fiber3DToneMapping toneMapping,
+    Fiber3DColorSpace outputColorSpace,
+  ) {
+    final toneMapped = toneMapping != Fiber3DToneMapping.none;
+    return [
+      if (toneMapped) '#define TONE_MAPPING',
+      if (toneMapped) fiber3dTonemappingParsFragment,
+      if (toneMapped)
+        Fiber3DProgramFunctions.toneMappingFunction('toneMapping', toneMapping),
+      fiber3dColorspaceParsFragment,
+      Fiber3DProgramFunctions.texelEncodingFunction(
+        'linearToOutputTexel',
+        outputColorSpace,
+      ),
+      Fiber3DProgramFunctions.luminanceFunction(),
+    ].join('\n');
+  }
 }

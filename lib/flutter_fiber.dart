@@ -3,6 +3,8 @@ library;
 export 'src/camera/fiber3d_camera.dart';
 export 'src/camera/fiber3d_orbit_controls.dart';
 
+export 'src/core/fiber3d_color.dart';
+export 'src/core/fiber3d_color_management.dart';
 export 'src/core/fiber3d_group.dart';
 export 'src/core/fiber3d_matrix4.dart';
 export 'src/core/fiber3d_mesh.dart';
@@ -34,3 +36,4 @@ export 'src/material/fiber3d_basic_material.dart';
 export 'src/material/fiber3d_standard_material.dart';
 
 export 'src/renderer/fiber3d_canvas.dart';
+export 'src/renderer/fiber3d_tone_mapping.dart';
