@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_fiber/flutter_fiber.dart';
 import 'package:flutter_fiber/src/renderer/fiber3d_canvas.dart';
 import 'package:flutter_fiber/src/core/fiber3d_mesh.dart';
 import 'package:flutter_fiber/src/core/fiber3d_vector3.dart';
@@ -19,7 +20,13 @@ import 'package:flutter_fiber/src/geometry/fiber3d_ring.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_sphere.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_torus.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_torus_knot.dart';
-
+import 'package:flutter_fiber/src/geometry/fiber3d_octahedron.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_tetrahedron.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_star.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_wedge.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_spring.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_chamfered_box.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_arrow.dart';
 
 void main() {
   runApp(const FiberShapeGallery());
@@ -61,6 +68,14 @@ final List<_ShapeEntry> _shapes = [
   _ShapeEntry('Sphere', () => Fiber3DSphere(radius: 1.2)),
   _ShapeEntry('Torus (donut)', () => Fiber3DTorus(radius: 1.0, tube: 0.4)),
   _ShapeEntry('TorusKnot', () => Fiber3DTorusKnot(radius: 1.0, tube: 0.3)),
+  _ShapeEntry('Octahedron', () => Fiber3DOctahedron(radius: 1.2)),
+  _ShapeEntry('Tetrahedron', () => Fiber3DTetrahedron(radius: 1.2)),
+  _ShapeEntry('Star', () => Fiber3DStar(outerRadius: 1.2, innerRadius: 0.5, points: 5, depth: 0.3)),
+  _ShapeEntry('Wedge (ramp)', () => Fiber3DWedge(width: 1.5, height: 1.0, depth: 1.5)),
+  _ShapeEntry('Spring', () => Fiber3DSpring(radius: 0.8, tubeRadius: 0.15, turns: 4, pitch: 0.5)),
+  _ShapeEntry('Chamfered Box', () => Fiber3DChamferedBox(width: 1.4, height: 1.4, depth: 1.4, chamferAmount: 0.4)),
+  _ShapeEntry('Arrow', () => null),
+
 ];
 
 class FiberShapeGallery extends StatefulWidget {
@@ -196,6 +211,28 @@ class _GalleryShape extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+if (entry.name == 'Arrow') {
+  final pinkMaterial = Fiber3DStandardMaterial(
+    color: 0xCC2952,
+    roughness: 0.5,
+    metalness: 0.2,
+    flatShading: flatShading,
+  );
+  return Fiber3DGroup(
+    onFrame: (elapsed, delta, transform) {
+      final t = delta.inMicroseconds / 1e6;
+      transform.rotation.y += t;
+      transform.rotation.x += t * 0.4;
+    },
+    children: [
+      Fiber3DArrow(
+        length: 2.0,
+        shaftMaterial: pinkMaterial,
+        headMaterial: pinkMaterial,
+      ).build(context),
+    ],
+  );
+}
     return Fiber3DMesh(
       geometry: entry.build(),
       material: Fiber3DStandardMaterial(
