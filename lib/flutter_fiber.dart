@@ -28,6 +28,13 @@ export 'src/geometry/fiber3d_ring.dart';
 export 'src/geometry/fiber3d_sphere.dart';
 export 'src/geometry/fiber3d_torus.dart';
 export 'src/geometry/fiber3d_torus_knot.dart';
+export 'src/geometry/fiber3d_octahedron.dart';
+export 'src/geometry/fiber3d_tetrahedron.dart';
+export 'src/geometry/fiber3d_star.dart';
+export 'src/geometry/fiber3d_arrow.dart';
+export 'src/geometry/fiber3d_wedge.dart';
+export 'src/geometry/fiber3d_spring.dart';
+export 'src/geometry/fiber3d_chamfered_box.dart';
 
 export 'src/light/fiber3d_ambient_light.dart';
 export 'src/light/fiber3d_point_light.dart';

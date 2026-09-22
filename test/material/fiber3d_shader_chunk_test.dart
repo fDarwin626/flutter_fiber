@@ -1,6 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_fiber/src/material/fiber3d_shader_chunk.dart';
+import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_begin_vertex.dart';
+import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_beginnormal_vertex.dart';
 import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_bsdfs.dart';
+import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_defaultnormal_vertex.dart';
+import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_normal_pars_vertex.dart';
+import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_normal_vertex.dart';
+import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_project_vertex.dart';
 import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_colorspace_fragment.dart';
 import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_colorspace_pars_fragment.dart';
 import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_common.dart';
@@ -13,6 +19,7 @@ import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_lights_physical_
 import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_metalnessmap_fragment.dart';
 import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_normal_fragment_begin.dart';
 import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_normal_pars_fragment.dart';
+import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_opaque_fragment.dart';
 import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_roughnessmap_fragment.dart';
 import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_tonemapping_fragment.dart';
 import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_tonemapping_pars_fragment.dart';
@@ -84,6 +91,39 @@ void main() {
       expect(Fiber3DShaderChunk.chunks['common'], fiber3dCommon);
     });
 
+    test('registers begin_vertex', () {
+      expect(Fiber3DShaderChunk.chunks['begin_vertex'], fiber3dBeginVertex);
+    });
+
+    test('registers beginnormal_vertex', () {
+      expect(
+        Fiber3DShaderChunk.chunks['beginnormal_vertex'],
+        fiber3dBeginnormalVertex,
+      );
+    });
+
+    test('registers defaultnormal_vertex', () {
+      expect(
+        Fiber3DShaderChunk.chunks['defaultnormal_vertex'],
+        fiber3dDefaultnormalVertex,
+      );
+    });
+
+    test('registers normal_pars_vertex', () {
+      expect(
+        Fiber3DShaderChunk.chunks['normal_pars_vertex'],
+        fiber3dNormalParsVertex,
+      );
+    });
+
+    test('registers normal_vertex', () {
+      expect(Fiber3DShaderChunk.chunks['normal_vertex'], fiber3dNormalVertex);
+    });
+
+    test('registers project_vertex', () {
+      expect(Fiber3DShaderChunk.chunks['project_vertex'], fiber3dProjectVertex);
+    });
+
     test('registers bsdfs', () {
       expect(Fiber3DShaderChunk.chunks['bsdfs'], fiber3dBsdfs);
     });
@@ -99,6 +139,13 @@ void main() {
       expect(
         Fiber3DShaderChunk.chunks['normal_fragment_begin'],
         fiber3dNormalFragmentBegin,
+      );
+    });
+
+    test('registers opaque_fragment', () {
+      expect(
+        Fiber3DShaderChunk.chunks['opaque_fragment'],
+        fiber3dOpaqueFragment,
       );
     });
 

@@ -1,4 +1,10 @@
+import 'shader_chunk/fiber3d_begin_vertex.dart';
+import 'shader_chunk/fiber3d_beginnormal_vertex.dart';
 import 'shader_chunk/fiber3d_bsdfs.dart';
+import 'shader_chunk/fiber3d_defaultnormal_vertex.dart';
+import 'shader_chunk/fiber3d_normal_pars_vertex.dart';
+import 'shader_chunk/fiber3d_normal_vertex.dart';
+import 'shader_chunk/fiber3d_project_vertex.dart';
 import 'shader_chunk/fiber3d_colorspace_fragment.dart';
 import 'shader_chunk/fiber3d_colorspace_pars_fragment.dart';
 import 'shader_chunk/fiber3d_common.dart';
@@ -11,6 +17,7 @@ import 'shader_chunk/fiber3d_lights_physical_pars_fragment.dart';
 import 'shader_chunk/fiber3d_metalnessmap_fragment.dart';
 import 'shader_chunk/fiber3d_normal_fragment_begin.dart';
 import 'shader_chunk/fiber3d_normal_pars_fragment.dart';
+import 'shader_chunk/fiber3d_opaque_fragment.dart';
 import 'shader_chunk/fiber3d_roughnessmap_fragment.dart';
 import 'shader_chunk/fiber3d_tonemapping_fragment.dart';
 import 'shader_chunk/fiber3d_tonemapping_pars_fragment.dart';
@@ -26,7 +33,13 @@ class Fiber3DShaderChunk {
   Fiber3DShaderChunk._();
 
   static const Map<String, String> chunks = {
+    'begin_vertex': fiber3dBeginVertex,
+    'beginnormal_vertex': fiber3dBeginnormalVertex,
     'bsdfs': fiber3dBsdfs,
+    'defaultnormal_vertex': fiber3dDefaultnormalVertex,
+    'normal_pars_vertex': fiber3dNormalParsVertex,
+    'normal_vertex': fiber3dNormalVertex,
+    'project_vertex': fiber3dProjectVertex,
     'colorspace_fragment': fiber3dColorspaceFragment,
     'colorspace_pars_fragment': fiber3dColorspaceParsFragment,
     'common': fiber3dCommon,
@@ -39,6 +52,7 @@ class Fiber3DShaderChunk {
     'metalnessmap_fragment': fiber3dMetalnessmapFragment,
     'normal_fragment_begin': fiber3dNormalFragmentBegin,
     'normal_pars_fragment': fiber3dNormalParsFragment,
+    'opaque_fragment': fiber3dOpaqueFragment,
     'roughnessmap_fragment': fiber3dRoughnessmapFragment,
     'tonemapping_fragment': fiber3dTonemappingFragment,
     'tonemapping_pars_fragment': fiber3dTonemappingParsFragment,

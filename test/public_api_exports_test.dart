@@ -5,6 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 // Files under lib/src that are deliberately NOT part of the public API.
 // Everything under src/material/shader_chunk/ is internal too.
 const _internal = <String>{
+  'src/light/fiber3d_lights_state.dart',
+  'src/material/fiber3d_shader_preprocess.dart',
+  'src/material/fiber3d_dfg_lut_data.dart',
   'src/material/fiber3d_edge_shader.dart',
   'src/material/fiber3d_pbr_shader.dart',
   'src/material/fiber3d_program_functions.dart',

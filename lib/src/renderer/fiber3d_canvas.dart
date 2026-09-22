@@ -14,6 +14,7 @@ import '../core/fiber3d_color.dart';
 import '../core/fiber3d_color_management.dart';
 import 'fiber3d_tone_mapping.dart';
 import 'dart:math';
+import '../material/fiber3d_dfg_lut_data.dart';
 import '../material/fiber3d_edge_shader.dart';
 
 /// Signature for a per-frame callback registered with [Fiber3DCanvas].
@@ -132,6 +133,11 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   dynamic _sourceTexture;
   dynamic _defaultDepthRenderbuffer;
 
+  /// The precomputed DFG lookup texture used by the physical material's
+  /// specular BRDF (see lights_physical_pars_fragment). Uploaded once,
+  /// never changes.
+  dynamic _dfgLutTexture;
+
   bool get isGlReady => _glReady;
 
   Future<void> _initGl(Size size, double dpr) async {
@@ -167,6 +173,8 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       _sourceTexture = _defaultFramebufferTexture;
     }
 
+
+    _setupDfgLutTexture();
     _compileShader();
     _compileEdgeShader();
 
@@ -415,6 +423,33 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       gl.RENDERBUFFER,
       _defaultDepthRenderbuffer,
     );
+  }
+  /// Uploads the precomputed 16x16 DFG lookup table as an RG32F texture.
+  /// Ported from three.js's DFGLUT.js texture setup (minFilter/magFilter
+  /// Linear, wrapS/wrapT ClampToEdge, no mipmaps).
+  void _setupDfgLutTexture() {
+    final gl = _glPlugin!.gl;
+
+    _dfgLutTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, _dfgLutTexture);
+
+    final data = Float32Array.fromList(dfgLutData);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RG32F,
+      dfgLutSize,
+      dfgLutSize,
+      0,
+      gl.RG,
+      gl.FLOAT,
+      data,
+    );
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
 
   late final Ticker _ticker;
@@ -1027,6 +1062,10 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     if (_defaultFramebufferTexture != null) {
       gl.deleteTexture(_defaultFramebufferTexture);
     }
+    if (_dfgLutTexture != null) {
+      gl.deleteTexture(_dfgLutTexture);
+    }
+    
     if (_defaultDepthRenderbuffer != null) {
       gl.deleteRenderbuffer(_defaultDepthRenderbuffer);
     }
