@@ -1,35 +1,19 @@
+import 'package:flutter_fiber/src/material/shader_chunk/fiber3d_lights_lambert_pars_fragment.dart';
+
 import '../core/fiber3d_color_management.dart';
 import '../renderer/fiber3d_tone_mapping.dart';
+import 'fiber3d_pbr_shader.dart';
 import 'fiber3d_program_functions.dart';
 import 'fiber3d_shader_chunk.dart';
 import 'fiber3d_shader_preprocess.dart';
 import 'shader_chunk/fiber3d_colorspace_pars_fragment.dart';
 import 'shader_chunk/fiber3d_tonemapping_pars_fragment.dart';
 
-/// The vertex/fragment pair for flutter_fiber's physical (PBR) material.
-///
-/// Ported from three.js's `meshphysical.glsl.js`
-/// (src/renderers/shaders/ShaderLib/), trimmed to the subset of chunks
-/// flutter_fiber has ported so far: no UV/texture maps, no shadows, no
-/// fog, no morph/skin/batching/instancing, no clearcoat/sheen/iridescence/
-/// anisotropy/transmission (all still behind their #ifdef guards and
-/// simply never triggered), and no environment maps (so indirect specular
-/// is always zero black metals until Section 6).
-///
-/// Because flutter_fiber has no WebGLProgram-style automatic uniform/
-/// attribute injection, `position`, `normal`, `modelViewMatrix`,
-/// `projectionMatrix`, `normalMatrix` and `isOrthographic` are declared
-/// explicitly here rather than assumed.
-class Fiber3DPbrShader {
-  /// GLSL loop bounds must be compile-time constants, so NUM_POINT_LIGHTS
-  /// is fixed to this value rather than derived per-scene (see
-  /// Fiber3DShaderPreprocess). Unused light slots are zeroed at upload
-  /// time by the canvas.
-  static const int maxPointLights = 4;
 
+class Fiber3DLambertShader {
   static String vertex(String version) {
     const body = r'''
-#define STANDARD
+#define LAMBERT
 
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
@@ -66,8 +50,6 @@ void main() {
 $resolved""";
   }
 
-  /// Output settings are baked into the shader at compile time, like
-  /// three.js's program parameters.
   static String fragment(
     String version, {
     Fiber3DToneMapping toneMapping = Fiber3DToneMapping.none,
@@ -75,19 +57,28 @@ $resolved""";
   }) {
     final outputPrefix = _outputPrefix(toneMapping, outputColorSpace);
 
+    // vViewPosition is declared here, once, matching Fiber3DPbrShader's
+    // pattern — so lights_lambert_pars_fragment's own `varying vec3
+    // vViewPosition;` line must NOT also be included verbatim, or this
+    // becomes a duplicate declaration and fails to compile. Handled by
+    // stripping that one line out of the chunk's own text before
+    // inclusion, rather than editing the ported chunk file itself (which
+    // stays a faithful, unmodified copy of the real three.js source).
+    final lambertParsWithoutDuplicateVarying = fiber3dLightsLambertParsFragment
+        .replaceFirst('varying vec3 vViewPosition;\n\n', '');
+
     final body =
         '''
-#define STANDARD
+#define LAMBERT
 #define OPAQUE
 
 uniform vec3 diffuse;
 uniform vec3 emissive;
 uniform float emissiveIntensity;
-uniform float roughness;
-uniform float metalness;
 uniform float opacity;
 uniform bool isOrthographic;
 uniform mat4 viewMatrix;
+
 varying vec3 vViewPosition;
 
 $outputPrefix
@@ -95,7 +86,7 @@ $outputPrefix
 #include <common>
 #include <lights_pars_begin>
 #include <normal_pars_fragment>
-#include <lights_physical_pars_fragment>
+$lambertParsWithoutDuplicateVarying
 
 void main() {
 
@@ -103,20 +94,15 @@ void main() {
 \tReflectedLight reflectedLight = ReflectedLight( vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ) );
 \tvec3 totalEmissiveRadiance = emissive * emissiveIntensity;
 
-\t#include <roughnessmap_fragment>
-\t#include <metalnessmap_fragment>
 \t#include <normal_fragment_begin>
 
 \t// accumulation
-\t#include <lights_physical_fragment>
+\t#include <lights_lambert_fragment>
 \t#include <lights_fragment_begin>
 \t#include <lights_fragment_maps>
 \t#include <lights_fragment_end>
 
-\tvec3 totalDiffuse = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;
-\tvec3 totalSpecular = reflectedLight.directSpecular + reflectedLight.indirectSpecular;
-
-\tvec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+\tvec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;
 
 \t#include <opaque_fragment>
 \t#include <tonemapping_fragment>
@@ -128,7 +114,7 @@ void main() {
     final resolved = Fiber3DShaderChunk.resolveIncludes(body);
     final withNums = Fiber3DShaderPreprocess.replaceLightNums(
       resolved,
-      numPointLights: maxPointLights,
+      numPointLights: Fiber3DPbrShader.maxPointLights,
     );
     final unrolled = Fiber3DShaderPreprocess.unrollLoops(withNums);
 
@@ -142,8 +128,6 @@ out highp vec4 pc_fragColor;
 $unrolled""";
   }
 
-  /// The prefix pieces three.js's WebGLProgram injects before the fragment
-  /// body: tone-mapping (only when active) and output encoding.
   static String _outputPrefix(
     Fiber3DToneMapping toneMapping,
     Fiber3DColorSpace outputColorSpace,

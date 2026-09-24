@@ -50,13 +50,13 @@ void main() {
       );
     });
 
-    test('tone mapping runs before output encoding, both after lighting', () {
+        test('tone mapping runs before output encoding, both after lighting', () {
       final src = Fiber3DPbrShader.fragment(
         '300 es',
         toneMapping: Fiber3DToneMapping.acesFilmic,
       );
 
-      final lit = src.indexOf('gl_FragColor = vec4(outgoing, 1.0);');
+      final lit = src.indexOf('gl_FragColor = vec4( outgoingLight, diffuseColor.a );');
       final tone = src.indexOf(
         'gl_FragColor.rgb = toneMapping( gl_FragColor.rgb );',
       );
@@ -68,7 +68,7 @@ void main() {
       expect(tone, greaterThan(lit));
       expect(encode, greaterThan(tone));
     });
-
+    
     test('helper functions are defined before main()', () {
       final src = Fiber3DPbrShader.fragment(
         '300 es',

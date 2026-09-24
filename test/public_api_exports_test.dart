@@ -10,10 +10,10 @@ const _internal = <String>{
   'src/material/fiber3d_dfg_lut_data.dart',
   'src/material/fiber3d_edge_shader.dart',
   'src/material/fiber3d_pbr_shader.dart',
+  'src/material/fiber3d_lambert_shader.dart',
   'src/material/fiber3d_program_functions.dart',
   'src/material/fiber3d_shader_chunk.dart',
 };
-
 void main() {
   test('every public file under lib/src is exported from flutter_fiber.dart', () {
     final barrel = File('lib/flutter_fiber.dart').readAsStringSync();

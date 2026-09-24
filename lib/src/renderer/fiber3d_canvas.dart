@@ -11,6 +11,7 @@ import '../camera/fiber3d_orbit_controls.dart';
 import '../material/fiber3d_pbr_shader.dart';
 import '../core/fiber3d_vector3.dart';
 import '../core/fiber3d_color.dart';
+import '../light/fiber3d_lights_state.dart';
 import '../core/fiber3d_color_management.dart';
 import 'fiber3d_tone_mapping.dart';
 import 'dart:math';
@@ -60,12 +61,6 @@ class Fiber3DCanvas extends StatefulWidget {
   /// white to match prior behavior.
   final int backgroundColor;
 
-  /// Tier 1 fake environment lighting (HemisphereLight-style) sky and
-  /// ground colors blended by surface normal.y. Defaults approximate a
-  /// neutral daylight room; pass 0x000000/0x000000 to disable entirely.
-  final int skyColor;
-  final int groundColor;
-
   /// When true (default), hex colors are converted to linear space for
   /// lighting and the final image is sRGB-encoded, like three.js. Set
   /// false for the v1 look (raw colors, no output encoding). Read once at
@@ -86,20 +81,12 @@ class Fiber3DCanvas extends StatefulWidget {
     this.lights = const [],
     Fiber3DCamera? camera,
     this.orbitEnabled = false,
-    this.backgroundColor = 0xFFFFFF,
-    this.skyColor = 0x87A6C4,
-    this.groundColor = 0x3B3A35,
+     this.backgroundColor = 0xFFFFFF,
     this.colorManagement = true,
     this.toneMapping = Fiber3DToneMapping.none,
     this.toneMappingExposure = 1.0,
   }) : camera = camera ?? Fiber3DCamera();
 
-  double get skyColorR => ((skyColor >> 16) & 0xFF) / 255.0;
-  double get skyColorG => ((skyColor >> 8) & 0xFF) / 255.0;
-  double get skyColorB => (skyColor & 0xFF) / 255.0;
-  double get groundColorR => ((groundColor >> 16) & 0xFF) / 255.0;
-  double get groundColorG => ((groundColor >> 8) & 0xFF) / 255.0;
-  double get groundColorB => (groundColor & 0xFF) / 255.0;
   @override
   State<Fiber3DCanvas> createState() => Fiber3DCanvasState();
 }
@@ -190,25 +177,27 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
 
   int aPositionLocation = -1;
   int aNormalLocation = -1;
-
-  int uModelMatrixLocation = -1;
-  int uViewMatrixLocation = -1;
+  int uModelViewMatrixLocation = -1;
   int uProjectionMatrixLocation = -1;
+  int uNormalMatrixLocation = -1;
+  int uViewMatrixLocation = -1;
   int uCameraPositionLocation = -1;
 
-  int uBaseColorLocation = -1;
+  int uDiffuseLocation = -1;
   int uRoughnessLocation = -1;
   int uMetalnessLocation = -1;
+  int uOpacityLocation = -1;
+  int uIsOrthographicLocation = -1;
   int uEmissiveLocation = -1;
   int uEmissiveIntensityLocation = -1;
   int uAmbientLightColorLocation = -1;
-  int uSkyColorLocation = -1;
-  int uGroundColorLocation = -1;
-  int uPointLightCountLocation = -1;
-  int uPointLightPositionLocation = -1;
-  int uPointLightColorLocation = -1;
-  int uPointLightDistanceLocation = -1;
-  int uPointLightDecayLocation = -1;
+  int uDfgLutLocation = -1;
+
+  List<int> uPointLightPositionLocations = [];
+  List<int> uPointLightColorLocations = [];
+  List<int> uPointLightDistanceLocations = [];
+  List<int> uPointLightDecayLocations = [];
+
   int uToneMappingExposureLocation = -1;
 
   String _glslVersion() {
@@ -252,60 +241,64 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
 
     gl.useProgram(glProgram);
 
-    aPositionLocation = gl.getAttribLocation(glProgram, 'a_Position');
-    aNormalLocation = gl.getAttribLocation(glProgram, 'a_Normal');
-
-    uModelMatrixLocation = gl.getUniformLocation(glProgram, 'u_ModelMatrix');
-    uViewMatrixLocation = gl.getUniformLocation(glProgram, 'u_ViewMatrix');
+    aPositionLocation = gl.getAttribLocation(glProgram, 'position');
+    aNormalLocation = gl.getAttribLocation(glProgram, 'normal');
+    
+    uModelViewMatrixLocation = gl.getUniformLocation(
+      glProgram,
+      'modelViewMatrix',
+    );
     uProjectionMatrixLocation = gl.getUniformLocation(
       glProgram,
-      'u_ProjectionMatrix',
+      'projectionMatrix',
     );
-    uCameraPositionLocation = gl.getUniformLocation(
-      glProgram,
-      'u_CameraPosition',
-    );
+    uNormalMatrixLocation = gl.getUniformLocation(glProgram, 'normalMatrix');
+    uViewMatrixLocation = gl.getUniformLocation(glProgram, 'viewMatrix');
+    uCameraPositionLocation = -1;
 
-    uBaseColorLocation = gl.getUniformLocation(glProgram, 'u_BaseColor');
-    uRoughnessLocation = gl.getUniformLocation(glProgram, 'u_Roughness');
-    uMetalnessLocation = gl.getUniformLocation(glProgram, 'u_Metalness');
-    uEmissiveLocation = gl.getUniformLocation(glProgram, 'u_Emissive');
+    uDiffuseLocation = gl.getUniformLocation(glProgram, 'diffuse');
+    uRoughnessLocation = gl.getUniformLocation(glProgram, 'roughness');
+    uMetalnessLocation = gl.getUniformLocation(glProgram, 'metalness');
+    uOpacityLocation = gl.getUniformLocation(glProgram, 'opacity');
+    uIsOrthographicLocation = gl.getUniformLocation(
+      glProgram,
+      'isOrthographic',
+    );
+    uEmissiveLocation = gl.getUniformLocation(glProgram, 'emissive');
     uEmissiveIntensityLocation = gl.getUniformLocation(
       glProgram,
-      'u_EmissiveIntensity',
+      'emissiveIntensity',
     );
 
     uAmbientLightColorLocation = gl.getUniformLocation(
       glProgram,
-      'u_AmbientLightColor',
+      'ambientLightColor',
     );
-    uSkyColorLocation = gl.getUniformLocation(glProgram, 'u_SkyColor');
-    uGroundColorLocation = gl.getUniformLocation(glProgram, 'u_GroundColor');
-    uPointLightCountLocation = gl.getUniformLocation(
-      glProgram,
-      'u_PointLightCount',
+    uDfgLutLocation = gl.getUniformLocation(glProgram, 'dfgLUT');
+
+    uPointLightPositionLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(glProgram, 'pointLights[$i].position'),
     );
-    uPointLightPositionLocation = gl.getUniformLocation(
-      glProgram,
-      'u_PointLightPosition',
+    uPointLightColorLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(glProgram, 'pointLights[$i].color'),
     );
-    uPointLightColorLocation = gl.getUniformLocation(
-      glProgram,
-      'u_PointLightColor',
+    uPointLightDistanceLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(glProgram, 'pointLights[$i].distance'),
     );
-    uPointLightDistanceLocation = gl.getUniformLocation(
-      glProgram,
-      'u_PointLightDistance',
+    uPointLightDecayLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(glProgram, 'pointLights[$i].decay'),
     );
-    uPointLightDecayLocation = gl.getUniformLocation(
-      glProgram,
-      'u_PointLightDecay',
-    );
+
     uToneMappingExposureLocation = gl.getUniformLocation(
       glProgram,
       'toneMappingExposure',
     );
   }
+
 
   dynamic edgeGlProgram;
   int aEdgePositionLocation = -1;
@@ -765,17 +758,15 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       false,
       Float32Array.fromList(projection.elements),
     );
-    gl.uniform3f(
-      uCameraPositionLocation,
-      _camera.position.x,
-      _camera.position.y,
-      _camera.position.z,
-    );
+    gl.uniform1i(uIsOrthographicLocation, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, _dfgLutTexture);
+    gl.uniform1i(uDfgLutLocation, 1);
 
     if (widget.toneMapping != Fiber3DToneMapping.none) {
       gl.uniform1f(uToneMappingExposureLocation, widget.toneMappingExposure);
     }
-
     // Light uniforms.
     _uploadLights(gl);
 
@@ -800,43 +791,38 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   );
 
   void _uploadLights(dynamic gl) {
-    final sky = _linearColor(widget.skyColor);
-    gl.uniform3f(uSkyColorLocation, sky.r, sky.g, sky.b);
-    final ground = _linearColor(widget.groundColor);
-    gl.uniform3f(uGroundColorLocation, ground.r, ground.g, ground.b);
-    var ambient = const [0.0, 0.0, 0.0];
-    final pointPositions = <double>[];
-    final pointColors = <double>[];
-    final pointDistances = <double>[];
-    final pointDecays = <double>[];
+    var ambientColorsLinear = <List<double>>[];
+    var ambientIntensities = <double>[];
+    final pointLightUniforms = <Fiber3DPointLightUniforms>[];
 
     for (final light in widget.lights) {
       final typeName = light.runtimeType.toString();
       if (typeName == 'Fiber3DAmbientLight') {
         final c = _linearColor(light.color);
-        ambient = [
-          c.r * light.intensity,
-          c.g * light.intensity,
-          c.b * light.intensity,
-        ];
+        ambientColorsLinear.add([c.r, c.g, c.b]);
+        ambientIntensities.add(light.intensity as double);
       } else if (typeName == 'Fiber3DPointLight' &&
-          pointPositions.length < Fiber3DPbrShader.maxPointLights * 3) {
-        pointPositions.addAll([
-          light.position.x,
-          light.position.y,
-          light.position.z,
-        ]);
+          pointLightUniforms.length < Fiber3DPbrShader.maxPointLights) {
         final c = _linearColor(light.color);
-        pointColors.addAll([
-          c.r * light.intensity,
-          c.g * light.intensity,
-          c.b * light.intensity,
-        ]);
-        pointDistances.add(light.distance);
-        pointDecays.add(light.decay);
+        pointLightUniforms.add(
+          Fiber3DLightsState.pointLightUniforms(
+            x: light.position.x,
+            y: light.position.y,
+            z: light.position.z,
+            colorLinear: [c.r, c.g, c.b],
+            intensity: light.intensity,
+            distance: light.distance,
+            decay: light.decay,
+            viewMatrix: _camera.viewMatrix,
+          ),
+        );
       }
     }
 
+    final ambient = Fiber3DLightsState.sumAmbient(
+      colorsLinear: ambientColorsLinear,
+      intensities: ambientIntensities,
+    );
     gl.uniform3f(
       uAmbientLightColorLocation,
       ambient[0],
@@ -844,28 +830,22 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       ambient[2],
     );
 
-    final count = pointDistances.length;
-    gl.uniform1i(uPointLightCountLocation, count);
-
-    // Pad arrays to the fixed shader-side size.
-    while (pointPositions.length < Fiber3DPbrShader.maxPointLights * 3) {
-      pointPositions.add(0);
+    for (var i = 0; i < Fiber3DPbrShader.maxPointLights; i++) {
+      if (i < pointLightUniforms.length) {
+        final u = pointLightUniforms[i];
+        gl.uniform3f(uPointLightPositionLocations[i], u.x, u.y, u.z);
+        gl.uniform3f(uPointLightColorLocations[i], u.r, u.g, u.b);
+        gl.uniform1f(uPointLightDistanceLocations[i], u.distance);
+        gl.uniform1f(uPointLightDecayLocations[i], u.decay);
+      } else {
+        gl.uniform3f(uPointLightPositionLocations[i], 0, 0, 0);
+        gl.uniform3f(uPointLightColorLocations[i], 0, 0, 0);
+        gl.uniform1f(uPointLightDistanceLocations[i], 0);
+        gl.uniform1f(uPointLightDecayLocations[i], 2);
+      }
     }
-    while (pointColors.length < Fiber3DPbrShader.maxPointLights * 3) {
-      pointColors.add(0);
-    }
-    while (pointDistances.length < Fiber3DPbrShader.maxPointLights) {
-      pointDistances.add(0);
-    }
-    while (pointDecays.length < Fiber3DPbrShader.maxPointLights) {
-      pointDecays.add(2);
-    }
-
-    gl.uniform3fv(uPointLightPositionLocation, pointPositions);
-    gl.uniform3fv(uPointLightColorLocation, pointColors);
-    gl.uniform1fv(uPointLightDistanceLocation, pointDistances);
-    gl.uniform1fv(uPointLightDecayLocation, pointDecays);
   }
+
 
   void _drawMesh(dynamic gl, dynamic meshState) {
     final buffers = _buffersFor(meshState);
@@ -873,34 +853,47 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
 
     meshState.transform.updateWorldMatrix(updateParents: true);
     final modelMatrix = meshState.transform.matrixWorld;
+
+    final modelViewMatrix = _camera.viewMatrix.clone();
+    modelViewMatrix.multiply(modelMatrix);
     gl.uniformMatrix4fv(
-      uModelMatrixLocation,
+      uModelViewMatrixLocation,
       false,
-      Float32Array.fromList(modelMatrix.elements),
+      Float32Array.fromList(modelViewMatrix.elements),
     );
+
+    final normalSource = modelViewMatrix.clone();
+    normalSource.invert();
+    final ns = normalSource.elements;
+    final normalMatrix = Float32Array.fromList([
+      ns[0], ns[4], ns[8],
+      ns[1], ns[5], ns[9],
+      ns[2], ns[6], ns[10],
+    ]);
+    gl.uniformMatrix3fv(uNormalMatrixLocation, false, normalMatrix);
 
     final material = meshState.widget.material;
     final materialType = material.runtimeType.toString();
 
     if (materialType == 'Fiber3DStandardMaterial') {
       final base = _linearColor(material.color);
-      gl.uniform3f(uBaseColorLocation, base.r, base.g, base.b);
+      gl.uniform3f(uDiffuseLocation, base.r, base.g, base.b);
       gl.uniform1f(uRoughnessLocation, material.roughness);
       gl.uniform1f(uMetalnessLocation, material.metalness);
+      gl.uniform1f(uOpacityLocation, 1.0);
       final emissive = _linearColor(material.emissive);
       gl.uniform3f(uEmissiveLocation, emissive.r, emissive.g, emissive.b);
       gl.uniform1f(uEmissiveIntensityLocation, material.emissiveIntensity);
     } else if (materialType == 'Fiber3DBasicMaterial') {
-      // Basic material has no lighting response — feed it through as a
-      // fully "emissive" surface so it reads as flat/unlit, same
-      // conceptual behavior as three.js's MeshBasicMaterial.
-      gl.uniform3f(uBaseColorLocation, 0, 0, 0);
+      gl.uniform3f(uDiffuseLocation, 0, 0, 0);
       gl.uniform1f(uRoughnessLocation, 1.0);
       gl.uniform1f(uMetalnessLocation, 0.0);
+      gl.uniform1f(uOpacityLocation, 1.0);
       final basic = _linearColor(material.color);
       gl.uniform3f(uEmissiveLocation, basic.r, basic.g, basic.b);
       gl.uniform1f(uEmissiveIntensityLocation, 1.0);
     }
+
 
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.positionBuffer);
     gl.vertexAttribPointer(aPositionLocation, 3, gl.FLOAT, false, 0, 0);
