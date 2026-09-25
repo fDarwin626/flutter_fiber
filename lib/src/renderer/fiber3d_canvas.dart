@@ -9,6 +9,8 @@ import 'package:visibility_detector/visibility_detector.dart';
 import '../camera/fiber3d_camera.dart';
 import '../camera/fiber3d_orbit_controls.dart';
 import '../material/fiber3d_pbr_shader.dart';
+import '../material/fiber3d_lambert_shader.dart';
+import '../material/fiber3d_phong_shader.dart';
 import '../core/fiber3d_vector3.dart';
 import '../core/fiber3d_color.dart';
 import '../light/fiber3d_lights_state.dart';
@@ -41,6 +43,16 @@ class _Hittable {
     this.onPinchStart,
     this.onPinch,
   });
+}
+
+/// One frame's worth of resolved light data, computed once and applied
+/// to every compiled program's uniform locations (PBR, Lambert, ...)
+/// rather than re-walking widget.lights once per program.
+class _LightsSnapshot {
+  final List<double> ambient;
+  final List<Fiber3DPointLightUniforms> points;
+
+  _LightsSnapshot({required this.ambient, required this.points});
 }
 
 class Fiber3DCanvas extends StatefulWidget {
@@ -163,6 +175,8 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
 
     _setupDfgLutTexture();
     _compileShader();
+    _compileLambertShader();
+    _compilePhongShader();
     _compileEdgeShader();
 
     if (!mounted) return;
@@ -299,8 +313,264 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     );
   }
 
+  dynamic lambertGlProgram;
 
-  dynamic edgeGlProgram;
+  int lambertAPositionLocation = -1;
+  int lambertANormalLocation = -1;
+  int uLambertModelViewMatrixLocation = -1;
+  int uLambertProjectionMatrixLocation = -1;
+  int uLambertNormalMatrixLocation = -1;
+  int uLambertViewMatrixLocation = -1;
+  int uLambertIsOrthographicLocation = -1;
+
+  int uLambertDiffuseLocation = -1;
+  int uLambertOpacityLocation = -1;
+  int uLambertEmissiveLocation = -1;
+  int uLambertEmissiveIntensityLocation = -1;
+  int uLambertAmbientLightColorLocation = -1;
+
+  List<int> uLambertPointLightPositionLocations = [];
+  List<int> uLambertPointLightColorLocations = [];
+  List<int> uLambertPointLightDistanceLocations = [];
+  List<int> uLambertPointLightDecayLocations = [];
+
+  /// Compiles Lambert as a second, independent GL program — matching
+  /// three.js's WebGLPrograms (one compiled program per material type),
+  /// not a variant of the PBR program. PBR and Lambert meshes each bind
+  /// their own program in `_drawMesh`.
+  void _compileLambertShader() {
+    final gl = _glPlugin!.gl;
+    final version = _glslVersion();
+
+    final vs = _makeShader(
+      gl,
+      Fiber3DLambertShader.vertex(version),
+      gl.VERTEX_SHADER,
+    );
+    final fs = _makeShader(
+      gl,
+      Fiber3DLambertShader.fragment(
+        version,
+        toneMapping: widget.toneMapping,
+        outputColorSpace: widget.colorManagement
+            ? Fiber3DColorSpace.srgb
+            : Fiber3DColorSpace.linearSrgb,
+      ),
+      gl.FRAGMENT_SHADER,
+    );
+
+    lambertGlProgram = gl.createProgram();
+    gl.attachShader(lambertGlProgram, vs);
+    gl.attachShader(lambertGlProgram, fs);
+    gl.linkProgram(lambertGlProgram);
+
+    final linked = gl.getProgramParameter(lambertGlProgram, gl.LINK_STATUS);
+    if (linked == false || linked == 0) {
+      // ignore: avoid_print
+      print("Fiber3DCanvas: lambert shader program failed to link");
+      return;
+    }
+
+    gl.useProgram(lambertGlProgram);
+
+    lambertAPositionLocation = gl.getAttribLocation(
+      lambertGlProgram,
+      'position',
+    );
+    lambertANormalLocation = gl.getAttribLocation(lambertGlProgram, 'normal');
+
+    uLambertModelViewMatrixLocation = gl.getUniformLocation(
+      lambertGlProgram,
+      'modelViewMatrix',
+    );
+    uLambertProjectionMatrixLocation = gl.getUniformLocation(
+      lambertGlProgram,
+      'projectionMatrix',
+    );
+    uLambertNormalMatrixLocation = gl.getUniformLocation(
+      lambertGlProgram,
+      'normalMatrix',
+    );
+    uLambertViewMatrixLocation = gl.getUniformLocation(
+      lambertGlProgram,
+      'viewMatrix',
+    );
+    uLambertIsOrthographicLocation = gl.getUniformLocation(
+      lambertGlProgram,
+      'isOrthographic',
+    );
+
+    uLambertDiffuseLocation = gl.getUniformLocation(
+      lambertGlProgram,
+      'diffuse',
+    );
+    uLambertOpacityLocation = gl.getUniformLocation(
+      lambertGlProgram,
+      'opacity',
+    );
+    uLambertEmissiveLocation = gl.getUniformLocation(
+      lambertGlProgram,
+      'emissive',
+    );
+    uLambertEmissiveIntensityLocation = gl.getUniformLocation(
+      lambertGlProgram,
+      'emissiveIntensity',
+    );
+    uLambertAmbientLightColorLocation = gl.getUniformLocation(
+      lambertGlProgram,
+      'ambientLightColor',
+    );
+
+    uLambertPointLightPositionLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) =>
+          gl.getUniformLocation(lambertGlProgram, 'pointLights[$i].position'),
+    );
+    uLambertPointLightColorLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(lambertGlProgram, 'pointLights[$i].color'),
+    );
+    uLambertPointLightDistanceLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(
+        lambertGlProgram,
+        'pointLights[$i].distance',
+      ),
+    );
+    uLambertPointLightDecayLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(lambertGlProgram, 'pointLights[$i].decay'),
+    );
+  }
+
+  dynamic phongGlProgram;
+
+  int phongAPositionLocation = -1;
+  int phongANormalLocation = -1;
+  int uPhongModelViewMatrixLocation = -1;
+  int uPhongProjectionMatrixLocation = -1;
+  int uPhongNormalMatrixLocation = -1;
+  int uPhongViewMatrixLocation = -1;
+  int uPhongIsOrthographicLocation = -1;
+
+  int uPhongDiffuseLocation = -1;
+  int uPhongOpacityLocation = -1;
+  int uPhongEmissiveLocation = -1;
+  int uPhongEmissiveIntensityLocation = -1;
+  int uPhongSpecularLocation = -1;
+  int uPhongShininessLocation = -1;
+  int uPhongAmbientLightColorLocation = -1;
+
+  List<int> uPhongPointLightPositionLocations = [];
+  List<int> uPhongPointLightColorLocations = [];
+  List<int> uPhongPointLightDistanceLocations = [];
+  List<int> uPhongPointLightDecayLocations = [];
+
+  /// Compiles Phong as a third, independent GL program — same
+  /// one-program-per-material-type pattern as Lambert.
+  void _compilePhongShader() {
+    final gl = _glPlugin!.gl;
+    final version = _glslVersion();
+
+    final vs = _makeShader(
+      gl,
+      Fiber3DPhongShader.vertex(version),
+      gl.VERTEX_SHADER,
+    );
+    final fs = _makeShader(
+      gl,
+      Fiber3DPhongShader.fragment(
+        version,
+        toneMapping: widget.toneMapping,
+        outputColorSpace: widget.colorManagement
+            ? Fiber3DColorSpace.srgb
+            : Fiber3DColorSpace.linearSrgb,
+      ),
+      gl.FRAGMENT_SHADER,
+    );
+
+    phongGlProgram = gl.createProgram();
+    gl.attachShader(phongGlProgram, vs);
+    gl.attachShader(phongGlProgram, fs);
+    gl.linkProgram(phongGlProgram);
+
+    final linked = gl.getProgramParameter(phongGlProgram, gl.LINK_STATUS);
+    if (linked == false || linked == 0) {
+      // ignore: avoid_print
+      print("Fiber3DCanvas: phong shader program failed to link");
+      return;
+    }
+
+    gl.useProgram(phongGlProgram);
+
+    phongAPositionLocation = gl.getAttribLocation(phongGlProgram, 'position');
+    phongANormalLocation = gl.getAttribLocation(phongGlProgram, 'normal');
+
+    uPhongModelViewMatrixLocation = gl.getUniformLocation(
+      phongGlProgram,
+      'modelViewMatrix',
+    );
+    uPhongProjectionMatrixLocation = gl.getUniformLocation(
+      phongGlProgram,
+      'projectionMatrix',
+    );
+    uPhongNormalMatrixLocation = gl.getUniformLocation(
+      phongGlProgram,
+      'normalMatrix',
+    );
+    uPhongViewMatrixLocation = gl.getUniformLocation(
+      phongGlProgram,
+      'viewMatrix',
+    );
+    uPhongIsOrthographicLocation = gl.getUniformLocation(
+      phongGlProgram,
+      'isOrthographic',
+    );
+
+    uPhongDiffuseLocation = gl.getUniformLocation(phongGlProgram, 'diffuse');
+    uPhongOpacityLocation = gl.getUniformLocation(phongGlProgram, 'opacity');
+    uPhongEmissiveLocation = gl.getUniformLocation(
+      phongGlProgram,
+      'emissive',
+    );
+    uPhongEmissiveIntensityLocation = gl.getUniformLocation(
+      phongGlProgram,
+      'emissiveIntensity',
+    );
+    uPhongSpecularLocation = gl.getUniformLocation(
+      phongGlProgram,
+      'specular',
+    );
+    uPhongShininessLocation = gl.getUniformLocation(
+      phongGlProgram,
+      'shininess',
+    );
+    uPhongAmbientLightColorLocation = gl.getUniformLocation(
+      phongGlProgram,
+      'ambientLightColor',
+    );
+
+    uPhongPointLightPositionLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) =>
+          gl.getUniformLocation(phongGlProgram, 'pointLights[$i].position'),
+    );
+    uPhongPointLightColorLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(phongGlProgram, 'pointLights[$i].color'),
+    );
+    uPhongPointLightDistanceLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) =>
+          gl.getUniformLocation(phongGlProgram, 'pointLights[$i].distance'),
+    );
+    uPhongPointLightDecayLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(phongGlProgram, 'pointLights[$i].decay'),
+    );
+  }
+
+  dynamic edgeGlProgram;  
   int aEdgePositionLocation = -1;
   int uEdgeModelMatrixLocation = -1;
   int uEdgeViewMatrixLocation = -1;
@@ -718,6 +988,19 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     return buffers;
   }
 
+
+  dynamic _currentBoundProgram;
+
+  /// Switches the active GL program only when it differs from what's
+  /// currently bound — avoids a redundant useProgram call when
+  /// consecutive meshes share a material type.
+  void _useProgram(dynamic gl, dynamic program) {
+    if (!identical(_currentBoundProgram, program)) {
+      gl.useProgram(program);
+      _currentBoundProgram = program;
+    }
+  }
+
   void _renderFrame() {
     final gl = _glPlugin!.gl;
     if (glProgram == null) return;
@@ -729,8 +1012,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     gl.enable(gl.DEPTH_TEST);
     gl.clearColor(_bgR, _bgG, _bgB, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.useProgram(glProgram);
-
+    _useProgram(gl, glProgram);
     final runtimeAspect = _glSize!.width / _glSize!.height;
     final projection = Fiber3DMatrix4();
     final top = _camera.near * tan(_camera.fov * pi / 360.0);
@@ -767,13 +1049,74 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     if (widget.toneMapping != Fiber3DToneMapping.none) {
       gl.uniform1f(uToneMappingExposureLocation, widget.toneMappingExposure);
     }
-    // Light uniforms.
-    _uploadLights(gl);
 
+    // Light uniforms, computed once and applied to every compiled
+    // program in turn (PBR always exists; Lambert only if wired).
+    final lights = _computeLights();
+    _applyLights(
+      gl,
+      lights,
+      uAmbientLightColorLocation,
+      uPointLightPositionLocations,
+      uPointLightColorLocations,
+      uPointLightDistanceLocations,
+      uPointLightDecayLocations,
+    );
+
+    if (lambertGlProgram != null) {
+      _useProgram(gl, lambertGlProgram);
+      gl.uniformMatrix4fv(
+        uLambertViewMatrixLocation,
+        false,
+        Float32Array.fromList(_camera.viewMatrix.elements),
+      );
+      gl.uniformMatrix4fv(
+        uLambertProjectionMatrixLocation,
+        false,
+        Float32Array.fromList(projection.elements),
+      );
+      gl.uniform1i(uLambertIsOrthographicLocation, 0);
+      _applyLights(
+        gl,
+        lights,
+        uLambertAmbientLightColorLocation,
+        uLambertPointLightPositionLocations,
+        uLambertPointLightColorLocations,
+        uLambertPointLightDistanceLocations,
+        uLambertPointLightDecayLocations,
+      );
+    }
+
+    if (phongGlProgram != null) {
+      _useProgram(gl, phongGlProgram);
+      gl.uniformMatrix4fv(
+        uPhongViewMatrixLocation,
+        false,
+        Float32Array.fromList(_camera.viewMatrix.elements),
+      );
+      gl.uniformMatrix4fv(
+        uPhongProjectionMatrixLocation,
+        false,
+        Float32Array.fromList(projection.elements),
+      );
+      gl.uniform1i(uPhongIsOrthographicLocation, 0);
+      _applyLights(
+        gl,
+        lights,
+        uPhongAmbientLightColorLocation,
+        uPhongPointLightPositionLocations,
+        uPhongPointLightColorLocations,
+        uPhongPointLightDistanceLocations,
+        uPhongPointLightDecayLocations,
+      );
+    }
+
+    // Back to PBR _drawMesh assumes glProgram is the default bound
+    // program and only switches away for Lambert/Phong meshes.
+    _useProgram(gl, glProgram);
     for (final meshState in _meshes) {
       _drawMesh(gl, meshState);
     }
-
     gl.finish();
 
     if (!kIsWeb) {
@@ -790,7 +1133,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
         : Fiber3DColorSpace.linearSrgb,
   );
 
-  void _uploadLights(dynamic gl) {
+  _LightsSnapshot _computeLights() {
     var ambientColorsLinear = <List<double>>[];
     var ambientIntensities = <double>[];
     final pointLightUniforms = <Fiber3DPointLightUniforms>[];
@@ -823,29 +1166,37 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       colorsLinear: ambientColorsLinear,
       intensities: ambientIntensities,
     );
-    gl.uniform3f(
-      uAmbientLightColorLocation,
-      ambient[0],
-      ambient[1],
-      ambient[2],
-    );
+
+    return _LightsSnapshot(ambient: ambient, points: pointLightUniforms);
+  }
+
+  void _applyLights(
+    dynamic gl,
+    _LightsSnapshot lights,
+    int ambientLoc,
+    List<int> posLocs,
+    List<int> colorLocs,
+    List<int> distLocs,
+    List<int> decayLocs,
+  ) {
+    final ambient = lights.ambient;
+    gl.uniform3f(ambientLoc, ambient[0], ambient[1], ambient[2]);
 
     for (var i = 0; i < Fiber3DPbrShader.maxPointLights; i++) {
-      if (i < pointLightUniforms.length) {
-        final u = pointLightUniforms[i];
-        gl.uniform3f(uPointLightPositionLocations[i], u.x, u.y, u.z);
-        gl.uniform3f(uPointLightColorLocations[i], u.r, u.g, u.b);
-        gl.uniform1f(uPointLightDistanceLocations[i], u.distance);
-        gl.uniform1f(uPointLightDecayLocations[i], u.decay);
+      if (i < lights.points.length) {
+        final u = lights.points[i];
+        gl.uniform3f(posLocs[i], u.x, u.y, u.z);
+        gl.uniform3f(colorLocs[i], u.r, u.g, u.b);
+        gl.uniform1f(distLocs[i], u.distance);
+        gl.uniform1f(decayLocs[i], u.decay);
       } else {
-        gl.uniform3f(uPointLightPositionLocations[i], 0, 0, 0);
-        gl.uniform3f(uPointLightColorLocations[i], 0, 0, 0);
-        gl.uniform1f(uPointLightDistanceLocations[i], 0);
-        gl.uniform1f(uPointLightDecayLocations[i], 2);
+        gl.uniform3f(posLocs[i], 0, 0, 0);
+        gl.uniform3f(colorLocs[i], 0, 0, 0);
+        gl.uniform1f(distLocs[i], 0);
+        gl.uniform1f(decayLocs[i], 2);
       }
     }
   }
-
 
   void _drawMesh(dynamic gl, dynamic meshState) {
     final buffers = _buffersFor(meshState);
@@ -856,11 +1207,6 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
 
     final modelViewMatrix = _camera.viewMatrix.clone();
     modelViewMatrix.multiply(modelMatrix);
-    gl.uniformMatrix4fv(
-      uModelViewMatrixLocation,
-      false,
-      Float32Array.fromList(modelViewMatrix.elements),
-    );
 
     final normalSource = modelViewMatrix.clone();
     normalSource.invert();
@@ -870,40 +1216,116 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       ns[1], ns[5], ns[9],
       ns[2], ns[6], ns[10],
     ]);
-    gl.uniformMatrix3fv(uNormalMatrixLocation, false, normalMatrix);
+
 
     final material = meshState.widget.material;
     final materialType = material.runtimeType.toString();
+    final isLambert =
+        materialType == 'Fiber3DLambertMaterial' && lambertGlProgram != null;
+    final isPhong =
+        materialType == 'Fiber3DPhongMaterial' && phongGlProgram != null;
+
+    final program = isLambert
+        ? lambertGlProgram
+        : isPhong
+            ? phongGlProgram
+            : glProgram;
+    _useProgram(gl, program);
+
+    final positionLoc = isLambert
+        ? lambertAPositionLocation
+        : isPhong
+            ? phongAPositionLocation
+            : aPositionLocation;
+    final normalLoc = isLambert
+        ? lambertANormalLocation
+        : isPhong
+            ? phongANormalLocation
+            : aNormalLocation;
+    final mvLoc = isLambert
+        ? uLambertModelViewMatrixLocation
+        : isPhong
+            ? uPhongModelViewMatrixLocation
+            : uModelViewMatrixLocation;
+    final normalMatLoc = isLambert
+        ? uLambertNormalMatrixLocation
+        : isPhong
+            ? uPhongNormalMatrixLocation
+            : uNormalMatrixLocation;
+    final diffuseLoc = isLambert
+        ? uLambertDiffuseLocation
+        : isPhong
+            ? uPhongDiffuseLocation
+            : uDiffuseLocation;
+    final opacityLoc = isLambert
+        ? uLambertOpacityLocation
+        : isPhong
+            ? uPhongOpacityLocation
+            : uOpacityLocation;
+    final emissiveLoc = isLambert
+        ? uLambertEmissiveLocation
+        : isPhong
+            ? uPhongEmissiveLocation
+            : uEmissiveLocation;
+    final emissiveIntensityLoc = isLambert
+        ? uLambertEmissiveIntensityLocation
+        : isPhong
+            ? uPhongEmissiveIntensityLocation
+            : uEmissiveIntensityLocation;
+
+    gl.uniformMatrix4fv(
+      mvLoc,
+      false,
+      Float32Array.fromList(modelViewMatrix.elements),
+    );
+    gl.uniformMatrix3fv(normalMatLoc, false, normalMatrix);
 
     if (materialType == 'Fiber3DStandardMaterial') {
       final base = _linearColor(material.color);
-      gl.uniform3f(uDiffuseLocation, base.r, base.g, base.b);
+      gl.uniform3f(diffuseLoc, base.r, base.g, base.b);
       gl.uniform1f(uRoughnessLocation, material.roughness);
       gl.uniform1f(uMetalnessLocation, material.metalness);
-      gl.uniform1f(uOpacityLocation, 1.0);
+      gl.uniform1f(opacityLoc, 1.0);
       final emissive = _linearColor(material.emissive);
-      gl.uniform3f(uEmissiveLocation, emissive.r, emissive.g, emissive.b);
-      gl.uniform1f(uEmissiveIntensityLocation, material.emissiveIntensity);
-    } else if (materialType == 'Fiber3DBasicMaterial') {
-      gl.uniform3f(uDiffuseLocation, 0, 0, 0);
+      gl.uniform3f(emissiveLoc, emissive.r, emissive.g, emissive.b);
+      gl.uniform1f(emissiveIntensityLoc, material.emissiveIntensity);
+    } else if (materialType == 'Fiber3DLambertMaterial') {
+      final base = _linearColor(material.color);
+      gl.uniform3f(diffuseLoc, base.r, base.g, base.b);
+      gl.uniform1f(opacityLoc, 1.0);
+      final emissive = _linearColor(material.emissive);
+      gl.uniform3f(emissiveLoc, emissive.r, emissive.g, emissive.b);
+      gl.uniform1f(emissiveIntensityLoc, material.emissiveIntensity);
+    } else if (materialType == 'Fiber3DPhongMaterial') {
+      final base = _linearColor(material.color);
+      gl.uniform3f(diffuseLoc, base.r, base.g, base.b);
+      gl.uniform1f(opacityLoc, 1.0);
+      final emissive = _linearColor(material.emissive);
+      gl.uniform3f(emissiveLoc, emissive.r, emissive.g, emissive.b);
+      gl.uniform1f(emissiveIntensityLoc, material.emissiveIntensity);
+      final specular = _linearColor(material.specular);
+      gl.uniform3f(uPhongSpecularLocation, specular.r, specular.g, specular.b);
+      gl.uniform1f(uPhongShininessLocation, material.shininess);
+    } else if (materialType == 'Fiber3DBasicMaterial') {      
+      gl.uniform3f(diffuseLoc, 0, 0, 0);
       gl.uniform1f(uRoughnessLocation, 1.0);
       gl.uniform1f(uMetalnessLocation, 0.0);
-      gl.uniform1f(uOpacityLocation, 1.0);
+      gl.uniform1f(opacityLoc, 1.0);
       final basic = _linearColor(material.color);
-      gl.uniform3f(uEmissiveLocation, basic.r, basic.g, basic.b);
-      gl.uniform1f(uEmissiveIntensityLocation, 1.0);
+      gl.uniform3f(emissiveLoc, basic.r, basic.g, basic.b);
+      gl.uniform1f(emissiveIntensityLoc, 1.0);
     }
 
-
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.positionBuffer);
-    gl.vertexAttribPointer(aPositionLocation, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(aPositionLocation);
+    gl.vertexAttribPointer(positionLoc, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(positionLoc);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normalBuffer);
-    gl.vertexAttribPointer(aNormalLocation, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(aNormalLocation);
+    gl.vertexAttribPointer(normalLoc, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(normalLoc);
 
     final wireframeOnly = material.wireframe == true;
+
 
     if (wireframeOnly && buffers.lineIndexBuffer != null) {
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.lineIndexBuffer);
@@ -929,7 +1351,8 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   void _drawEdgeOverlay(dynamic gl, dynamic meshState, _MeshBuffers buffers) {
     if (edgeGlProgram == null) return;
 
-    gl.useProgram(edgeGlProgram);
+    final previousProgram = _currentBoundProgram;
+    _useProgram(gl, edgeGlProgram);
 
     final modelMatrix = meshState.transform.matrixWorld;
     gl.uniformMatrix4fv(
@@ -959,7 +1382,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.lineIndexBuffer);
     gl.drawElements(gl.LINES, buffers.lineIndexCount, gl.UNSIGNED_SHORT, 0);
 
-    gl.useProgram(glProgram);
+    _useProgram(gl, previousProgram);
   }
 
   VoidCallback registerFrameCallback(Fiber3DFrameCallback callback) {
@@ -1050,8 +1473,10 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     _meshBufferCache.clear();
 
     if (glProgram != null) gl.deleteProgram(glProgram);
+    if (lambertGlProgram != null) gl.deleteProgram(lambertGlProgram);
+    if (phongGlProgram != null) gl.deleteProgram(phongGlProgram);
     if (edgeGlProgram != null) gl.deleteProgram(edgeGlProgram);
-
+        
     if (_defaultFramebufferTexture != null) {
       gl.deleteTexture(_defaultFramebufferTexture);
     }

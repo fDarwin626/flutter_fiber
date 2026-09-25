@@ -11,7 +11,8 @@ const _internal = <String>{
   'src/material/fiber3d_edge_shader.dart',
   'src/material/fiber3d_pbr_shader.dart',
   'src/material/fiber3d_lambert_shader.dart',
-  'src/material/fiber3d_program_functions.dart',
+  'src/material/fiber3d_phong_shader.dart',
+  'src/material/fiber3d_program_functions.dart',  
   'src/material/fiber3d_shader_chunk.dart',
 };
 void main() {

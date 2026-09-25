@@ -4,6 +4,7 @@ import 'package:flutter_fiber/src/renderer/fiber3d_canvas.dart';
 import 'package:flutter_fiber/src/core/fiber3d_mesh.dart';
 import 'package:flutter_fiber/src/core/fiber3d_vector3.dart';
 import 'package:flutter_fiber/src/material/fiber3d_standard_material.dart';
+import 'package:flutter_fiber/src/material/fiber3d_lambert_material.dart';
 import 'package:flutter_fiber/src/light/fiber3d_ambient_light.dart';
 import 'package:flutter_fiber/src/light/fiber3d_point_light.dart';
 import 'package:flutter_fiber/src/camera/fiber3d_camera.dart';
@@ -89,12 +90,15 @@ class _FiberShapeGalleryState extends State<FiberShapeGallery> {
   int _index = 0;
   bool _showWires = false;
   bool _flatShading = true;
+  bool _useLambert = false;
 
   void _next() => setState(() => _index = (_index + 1) % _shapes.length);
   void _prev() =>
       setState(() => _index = (_index - 1 + _shapes.length) % _shapes.length);
   void _toggleWires() => setState(() => _showWires = !_showWires);
   void _toggleFlatShading() => setState(() => _flatShading = !_flatShading);
+  void _toggleMaterial() => setState(() => _useLambert = !_useLambert);
+
   @override
   Widget build(BuildContext context) {
     final entry = _shapes[_index];
@@ -105,10 +109,10 @@ class _FiberShapeGalleryState extends State<FiberShapeGallery> {
         appBar: AppBar(
           title: Text('flutter_fiber gallery: ${entry.name} '
               '(${_index + 1}/${_shapes.length})'),
-          backgroundColor: const Color(0xFF828282),
+          backgroundColor: const Color.fromARGB(255, 56, 55, 55),
         ),
         body: Fiber3DCanvas(
-          backgroundColor: 0x828282,
+          backgroundColor: 0x303130,
           camera: Fiber3DCamera(
             position: const Fiber3DVector3(0, 0, 5),
             target: const Fiber3DVector3.zero(),
@@ -137,13 +141,14 @@ class _FiberShapeGalleryState extends State<FiberShapeGallery> {
               entry: entry,
               showWires: _showWires,
               flatShading: _flatShading,
+              useLambert: _useLambert,
             ),
           ],
           ),
                   bottomNavigationBar: BottomAppBar(
-          color: const Color(0xFF828282),
+          color: const Color.fromARGB(255, 46, 45, 45),
           padding: EdgeInsets.zero,
-          height: 140,
+          height: 176,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Column(
@@ -188,7 +193,20 @@ class _FiberShapeGalleryState extends State<FiberShapeGallery> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _toggleMaterial,
+                        icon: Icon(_useLambert ? Icons.gradient : Icons.brightness_5),
+                        label: Text(_useLambert ? 'Material: Lambert' : 'Material: PBR'),
+                      ),
+                    ),
+                  ],
+                ),
               ],
+
             ),
           ),
         ),
@@ -202,18 +220,24 @@ class _GalleryShape extends StatelessWidget {
   final _ShapeEntry entry;
   final bool showWires;
   final bool flatShading;
+  final bool useLambert;
   const _GalleryShape({
     super.key,
     required this.entry,
     required this.showWires,
     required this.flatShading,
+    required this.useLambert,
   });
 
   @override
   Widget build(BuildContext context) {
 if (entry.name == 'Arrow') {
+  // Arrow always uses Standard/PBR — Fiber3DArrow's material params are
+  // typed for Fiber3DStandardMaterial, not swappable here without
+  // changing Fiber3DArrow's own API, which is out of scope for this
+  // material-toggle test.
   final pinkMaterial = Fiber3DStandardMaterial(
-    color: 0xCC2952,
+    color: 0x2952cc ,
     roughness: 0.5,
     metalness: 0.2,
     flatShading: flatShading,
@@ -233,15 +257,23 @@ if (entry.name == 'Arrow') {
     ],
   );
 }
+    final material = useLambert
+        ? Fiber3DLambertMaterial(
+            color: 0x2952cc,
+            flatShading: flatShading,
+            wireframe: false,
+          )
+        : Fiber3DStandardMaterial(
+            color: 0x2952cc,
+            roughness: 0.5,
+            metalness: 0.2,
+            flatShading: flatShading,
+            wireframe: false,
+          );
+
     return Fiber3DMesh(
       geometry: entry.build(),
-      material: Fiber3DStandardMaterial(
-        color: 0xCC2952,
-        roughness: 0.5,
-        metalness: 0.2,
-        flatShading: flatShading,
-        wireframe: false,
-      ),
+      material: material,
       showEdges: showWires,
       hitRadius: 1.5,
       onFrame: (elapsed, delta, transform) {
