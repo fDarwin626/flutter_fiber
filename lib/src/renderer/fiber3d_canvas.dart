@@ -11,6 +11,8 @@ import '../camera/fiber3d_orbit_controls.dart';
 import '../material/fiber3d_pbr_shader.dart';
 import '../material/fiber3d_lambert_shader.dart';
 import '../material/fiber3d_phong_shader.dart';
+import '../material/fiber3d_toon_shader.dart';
+import '../material/fiber3d_matcap_shader.dart';
 import '../core/fiber3d_vector3.dart';
 import '../core/fiber3d_color.dart';
 import '../light/fiber3d_lights_state.dart';
@@ -177,6 +179,8 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     _compileShader();
     _compileLambertShader();
     _compilePhongShader();
+    _compileToonShader();
+    _compileMatcapShader();
     _compileEdgeShader();
 
     if (!mounted) return;
@@ -570,7 +574,192 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     );
   }
 
-  dynamic edgeGlProgram;  
+  dynamic toonGlProgram;
+
+  int toonAPositionLocation = -1;
+  int toonANormalLocation = -1;
+  int uToonModelViewMatrixLocation = -1;
+  int uToonProjectionMatrixLocation = -1;
+  int uToonNormalMatrixLocation = -1;
+  int uToonViewMatrixLocation = -1;
+  int uToonIsOrthographicLocation = -1;
+
+  int uToonDiffuseLocation = -1;
+  int uToonOpacityLocation = -1;
+  int uToonEmissiveLocation = -1;
+  int uToonEmissiveIntensityLocation = -1;
+  int uToonAmbientLightColorLocation = -1;
+
+  List<int> uToonPointLightPositionLocations = [];
+  List<int> uToonPointLightColorLocations = [];
+  List<int> uToonPointLightDistanceLocations = [];
+  List<int> uToonPointLightDecayLocations = [];
+
+  /// Compiles Toon as a fourth, independent GL program — same
+  /// one-program-per-material-type pattern as Lambert/Phong. No
+  /// specular/shininess uniforms — Toon has neither, matching three.js's
+  /// own MeshToonMaterial.
+  void _compileToonShader() {
+    final gl = _glPlugin!.gl;
+    final version = _glslVersion();
+
+    final vs = _makeShader(
+      gl,
+      Fiber3DToonShader.vertex(version),
+      gl.VERTEX_SHADER,
+    );
+    final fs = _makeShader(
+      gl,
+      Fiber3DToonShader.fragment(
+        version,
+        toneMapping: widget.toneMapping,
+        outputColorSpace: widget.colorManagement
+            ? Fiber3DColorSpace.srgb
+            : Fiber3DColorSpace.linearSrgb,
+      ),
+      gl.FRAGMENT_SHADER,
+    );
+
+    toonGlProgram = gl.createProgram();
+    gl.attachShader(toonGlProgram, vs);
+    gl.attachShader(toonGlProgram, fs);
+    gl.linkProgram(toonGlProgram);
+
+    final linked = gl.getProgramParameter(toonGlProgram, gl.LINK_STATUS);
+    if (linked == false || linked == 0) {
+      // ignore: avoid_print
+      print("Fiber3DCanvas: toon shader program failed to link");
+      return;
+    }
+
+    gl.useProgram(toonGlProgram);
+
+    toonAPositionLocation = gl.getAttribLocation(toonGlProgram, 'position');
+    toonANormalLocation = gl.getAttribLocation(toonGlProgram, 'normal');
+
+    uToonModelViewMatrixLocation = gl.getUniformLocation(
+      toonGlProgram,
+      'modelViewMatrix',
+    );
+    uToonProjectionMatrixLocation = gl.getUniformLocation(
+      toonGlProgram,
+      'projectionMatrix',
+    );
+    uToonNormalMatrixLocation = gl.getUniformLocation(
+      toonGlProgram,
+      'normalMatrix',
+    );
+    uToonViewMatrixLocation = gl.getUniformLocation(
+      toonGlProgram,
+      'viewMatrix',
+    );
+    uToonIsOrthographicLocation = gl.getUniformLocation(
+      toonGlProgram,
+      'isOrthographic',
+    );
+
+    uToonDiffuseLocation = gl.getUniformLocation(toonGlProgram, 'diffuse');
+    uToonOpacityLocation = gl.getUniformLocation(toonGlProgram, 'opacity');
+    uToonEmissiveLocation = gl.getUniformLocation(toonGlProgram, 'emissive');
+    uToonEmissiveIntensityLocation = gl.getUniformLocation(
+      toonGlProgram,
+      'emissiveIntensity',
+    );
+    uToonAmbientLightColorLocation = gl.getUniformLocation(
+      toonGlProgram,
+      'ambientLightColor',
+    );
+
+    uToonPointLightPositionLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(toonGlProgram, 'pointLights[$i].position'),
+    );
+    uToonPointLightColorLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(toonGlProgram, 'pointLights[$i].color'),
+    );
+    uToonPointLightDistanceLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(toonGlProgram, 'pointLights[$i].distance'),
+    );
+    uToonPointLightDecayLocations = List<int>.generate(
+      Fiber3DPbrShader.maxPointLights,
+      (i) => gl.getUniformLocation(toonGlProgram, 'pointLights[$i].decay'),
+    );
+  }
+
+  dynamic matcapGlProgram;
+
+  int matcapAPositionLocation = -1;
+  int matcapANormalLocation = -1;
+  int uMatcapModelViewMatrixLocation = -1;
+  int uMatcapProjectionMatrixLocation = -1;
+  int uMatcapNormalMatrixLocation = -1;
+
+  int uMatcapDiffuseLocation = -1;
+  int uMatcapOpacityLocation = -1;
+
+  /// Compiles Matcap as a fifth, independent GL program. Unlike every
+  /// other material here, Matcap's real three.js shader declares no
+  /// viewMatrix, no isOrthographic, and no light-related uniforms at
+  /// all — it does no light accumulation, so there's nothing to upload
+  /// beyond the standard transform matrices and diffuse/opacity.
+  void _compileMatcapShader() {
+    final gl = _glPlugin!.gl;
+    final version = _glslVersion();
+
+    final vs = _makeShader(
+      gl,
+      Fiber3DMatcapShader.vertex(version),
+      gl.VERTEX_SHADER,
+    );
+    final fs = _makeShader(
+      gl,
+      Fiber3DMatcapShader.fragment(
+        version,
+        toneMapping: widget.toneMapping,
+        outputColorSpace: widget.colorManagement
+            ? Fiber3DColorSpace.srgb
+            : Fiber3DColorSpace.linearSrgb,
+      ),
+      gl.FRAGMENT_SHADER,
+    );
+
+    matcapGlProgram = gl.createProgram();
+    gl.attachShader(matcapGlProgram, vs);
+    gl.attachShader(matcapGlProgram, fs);
+    gl.linkProgram(matcapGlProgram);
+
+    final linked = gl.getProgramParameter(matcapGlProgram, gl.LINK_STATUS);
+    if (linked == false || linked == 0) {
+      // ignore: avoid_print
+      print("Fiber3DCanvas: matcap shader program failed to link");
+      return;
+    }
+
+    gl.useProgram(matcapGlProgram);
+
+    matcapAPositionLocation = gl.getAttribLocation(matcapGlProgram, 'position');
+    matcapANormalLocation = gl.getAttribLocation(matcapGlProgram, 'normal');
+
+    uMatcapModelViewMatrixLocation = gl.getUniformLocation(
+      matcapGlProgram,
+      'modelViewMatrix',
+    );
+    uMatcapProjectionMatrixLocation = gl.getUniformLocation(
+      matcapGlProgram,
+      'projectionMatrix',
+    );
+    uMatcapNormalMatrixLocation = gl.getUniformLocation(
+      matcapGlProgram,
+      'normalMatrix',
+    );
+
+    uMatcapDiffuseLocation = gl.getUniformLocation(matcapGlProgram, 'diffuse');
+    uMatcapOpacityLocation = gl.getUniformLocation(matcapGlProgram, 'opacity');
+  }
+
+  dynamic edgeGlProgram;   
   int aEdgePositionLocation = -1;
   int uEdgeModelMatrixLocation = -1;
   int uEdgeViewMatrixLocation = -1;
@@ -1111,9 +1300,44 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       );
     }
 
+    if (toonGlProgram != null) {
+      _useProgram(gl, toonGlProgram);
+      gl.uniformMatrix4fv(
+        uToonViewMatrixLocation,
+        false,
+        Float32Array.fromList(_camera.viewMatrix.elements),
+      );
+      gl.uniformMatrix4fv(
+        uToonProjectionMatrixLocation,
+        false,
+        Float32Array.fromList(projection.elements),
+      );
+      gl.uniform1i(uToonIsOrthographicLocation, 0);
+      _applyLights(
+        gl,
+        lights,
+        uToonAmbientLightColorLocation,
+        uToonPointLightPositionLocations,
+        uToonPointLightColorLocations,
+        uToonPointLightDistanceLocations,
+        uToonPointLightDecayLocations,
+      );
+    }
+
+    if (matcapGlProgram != null) {
+      _useProgram(gl, matcapGlProgram);
+      gl.uniformMatrix4fv(
+        uMatcapProjectionMatrixLocation,
+        false,
+        Float32Array.fromList(projection.elements),
+      );
+    }
+
     // Back to PBR _drawMesh assumes glProgram is the default bound
-    // program and only switches away for Lambert/Phong meshes.
+    // program and only switches away for Lambert/Phong/Toon/Matcap
+    // meshes.
     _useProgram(gl, glProgram);
+
     for (final meshState in _meshes) {
       _drawMesh(gl, meshState);
     }
@@ -1220,59 +1444,94 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
 
     final material = meshState.widget.material;
     final materialType = material.runtimeType.toString();
-    final isLambert =
+        final isLambert =
         materialType == 'Fiber3DLambertMaterial' && lambertGlProgram != null;
     final isPhong =
         materialType == 'Fiber3DPhongMaterial' && phongGlProgram != null;
+    final isToon =
+        materialType == 'Fiber3DToonMaterial' && toonGlProgram != null;
+    final isMatcap =
+        materialType == 'Fiber3DMatcapMaterial' && matcapGlProgram != null;
 
     final program = isLambert
         ? lambertGlProgram
         : isPhong
             ? phongGlProgram
-            : glProgram;
+            : isToon
+                ? toonGlProgram
+                : isMatcap
+                    ? matcapGlProgram
+                    : glProgram;
     _useProgram(gl, program);
 
     final positionLoc = isLambert
         ? lambertAPositionLocation
         : isPhong
             ? phongAPositionLocation
-            : aPositionLocation;
+            : isToon
+                ? toonAPositionLocation
+                : isMatcap
+                    ? matcapAPositionLocation
+                    : aPositionLocation;
     final normalLoc = isLambert
         ? lambertANormalLocation
         : isPhong
             ? phongANormalLocation
-            : aNormalLocation;
+            : isToon
+                ? toonANormalLocation
+                : isMatcap
+                    ? matcapANormalLocation
+                    : aNormalLocation;
     final mvLoc = isLambert
         ? uLambertModelViewMatrixLocation
         : isPhong
             ? uPhongModelViewMatrixLocation
-            : uModelViewMatrixLocation;
+            : isToon
+                ? uToonModelViewMatrixLocation
+                : isMatcap
+                    ? uMatcapModelViewMatrixLocation
+                    : uModelViewMatrixLocation;
     final normalMatLoc = isLambert
         ? uLambertNormalMatrixLocation
         : isPhong
             ? uPhongNormalMatrixLocation
-            : uNormalMatrixLocation;
+            : isToon
+                ? uToonNormalMatrixLocation
+                : isMatcap
+                    ? uMatcapNormalMatrixLocation
+                    : uNormalMatrixLocation;
     final diffuseLoc = isLambert
         ? uLambertDiffuseLocation
         : isPhong
             ? uPhongDiffuseLocation
-            : uDiffuseLocation;
+            : isToon
+                ? uToonDiffuseLocation
+                : isMatcap
+                    ? uMatcapDiffuseLocation
+                    : uDiffuseLocation;
     final opacityLoc = isLambert
         ? uLambertOpacityLocation
         : isPhong
             ? uPhongOpacityLocation
-            : uOpacityLocation;
+            : isToon
+                ? uToonOpacityLocation
+                : isMatcap
+                    ? uMatcapOpacityLocation
+                    : uOpacityLocation;
     final emissiveLoc = isLambert
         ? uLambertEmissiveLocation
         : isPhong
             ? uPhongEmissiveLocation
-            : uEmissiveLocation;
+            : isToon
+                ? uToonEmissiveLocation
+                : uEmissiveLocation;
     final emissiveIntensityLoc = isLambert
         ? uLambertEmissiveIntensityLocation
         : isPhong
             ? uPhongEmissiveIntensityLocation
-            : uEmissiveIntensityLocation;
-
+            : isToon
+                ? uToonEmissiveIntensityLocation
+                : uEmissiveIntensityLocation;
     gl.uniformMatrix4fv(
       mvLoc,
       false,
@@ -1306,6 +1565,17 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       final specular = _linearColor(material.specular);
       gl.uniform3f(uPhongSpecularLocation, specular.r, specular.g, specular.b);
       gl.uniform1f(uPhongShininessLocation, material.shininess);
+     } else if (materialType == 'Fiber3DToonMaterial') {
+      final base = _linearColor(material.color);
+      gl.uniform3f(diffuseLoc, base.r, base.g, base.b);
+      gl.uniform1f(opacityLoc, 1.0);
+      final emissive = _linearColor(material.emissive);
+      gl.uniform3f(emissiveLoc, emissive.r, emissive.g, emissive.b);
+      gl.uniform1f(emissiveIntensityLoc, material.emissiveIntensity);
+    } else if (materialType == 'Fiber3DMatcapMaterial') {
+      final base = _linearColor(material.color);
+      gl.uniform3f(diffuseLoc, base.r, base.g, base.b);
+      gl.uniform1f(opacityLoc, 1.0);
     } else if (materialType == 'Fiber3DBasicMaterial') {      
       gl.uniform3f(diffuseLoc, 0, 0, 0);
       gl.uniform1f(uRoughnessLocation, 1.0);
@@ -1475,8 +1745,9 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     if (glProgram != null) gl.deleteProgram(glProgram);
     if (lambertGlProgram != null) gl.deleteProgram(lambertGlProgram);
     if (phongGlProgram != null) gl.deleteProgram(phongGlProgram);
-    if (edgeGlProgram != null) gl.deleteProgram(edgeGlProgram);
-        
+    if (toonGlProgram != null) gl.deleteProgram(toonGlProgram);
+    if (matcapGlProgram != null) gl.deleteProgram(matcapGlProgram);
+    if (edgeGlProgram != null) gl.deleteProgram(edgeGlProgram);          
     if (_defaultFramebufferTexture != null) {
       gl.deleteTexture(_defaultFramebufferTexture);
     }

@@ -7,12 +7,16 @@ import 'package:flutter_fiber/src/core/fiber3d_vector3.dart';
 import 'package:flutter_fiber/src/material/fiber3d_standard_material.dart';
 import 'package:flutter_fiber/src/material/fiber3d_lambert_material.dart';
 import 'package:flutter_fiber/src/material/fiber3d_phong_material.dart';
+import 'package:flutter_fiber/src/material/fiber3d_toon_material.dart';
+import 'package:flutter_fiber/src/material/fiber3d_matcap_material.dart';
 import 'package:flutter_fiber/src/light/fiber3d_ambient_light.dart';
 import 'package:flutter_fiber/src/light/fiber3d_point_light.dart';
 import 'package:flutter_fiber/src/camera/fiber3d_camera.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_torus_knot.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_icosahedron.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_sphere.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_octahedron.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_cone.dart';
 
 void main() {
   runApp(const FiberShowcase());
@@ -73,8 +77,11 @@ class FiberShowcase extends StatelessWidget {
             _PhongTorusKnot(),
             _LambertIcosahedron(),
             _PbrHeroSphere(),
+            _ToonOctahedron(),
+            _MatcapCone(),
             _PbrGradientRow(),
           ],
+
         ),
       ),
     );
@@ -95,6 +102,7 @@ class _PhongTorusKnot extends StatelessWidget {
         specular: 0xffffff,
         shininess: 80.0,
       ),
+      showEdges: true,
       onFrame: (elapsed, delta, transform) {
         transform.position.set(0, 0.6, 0);
         final t = elapsed.inMicroseconds / 1e6;
@@ -118,6 +126,7 @@ class _LambertIcosahedron extends StatelessWidget {
         color: 0x33aa77,
         flatShading: true,
       ),
+      showEdges: true,
       onFrame: (elapsed, delta, transform) {
         transform.position.set(-3.2, 0.6, -0.5);
         final t = elapsed.inMicroseconds / 1e6;
@@ -142,6 +151,7 @@ class _PbrHeroSphere extends StatelessWidget {
         roughness: 0.15,
         metalness: 0.6,
       ),
+      showEdges: false,
       onFrame: (elapsed, delta, transform) {
         transform.position.set(3.2, 0.6, -0.5);
         final t = elapsed.inMicroseconds / 1e6;
@@ -151,7 +161,53 @@ class _PbrHeroSphere extends StatelessWidget {
   }
 }
 
+/// Front-left: a Toon octahedron — the banded/stepped shading is the
+/// clearest way to see the cel-shaded look at a glance, and the flat
+/// facets of an octahedron (rather than a smooth sphere) make each band
+/// boundary sit along a clean edge instead of a soft curve.
+class _ToonOctahedron extends StatelessWidget {
+  const _ToonOctahedron();
+
+  @override
+  Widget build(BuildContext context) {
+    return Fiber3DMesh(
+      geometry: Fiber3DOctahedron(radius: 0.85),
+      material: Fiber3DToonMaterial(color: 0xffaa22),
+      showEdges: false,
+      onFrame: (elapsed, delta, transform) {
+        transform.position.set(-1.6, -0.4, 2.2);
+        final t = elapsed.inMicroseconds / 1e6;
+        transform.rotation.y = t * 0.5;
+        transform.rotation.x = t * 0.3;
+      },
+    );
+  }
+}
+
+/// Front-right: a Matcap cone no lighting response at all, so its
+/// shading stays fixed relative to the camera as it spins, the
+/// clearest possible contrast against every other material here, all
+/// of which respond to the point lights.
+class _MatcapCone extends StatelessWidget {
+  const _MatcapCone();
+
+  @override
+  Widget build(BuildContext context) {
+    return Fiber3DMesh(
+      geometry: Fiber3DCone(radius: 0.6, height: 1.2, radialSegments: 32),
+      material: const Fiber3DMatcapMaterial(color: 0xdddddd),
+      showEdges: true,
+      onFrame: (elapsed, delta, transform) {
+        transform.position.set(1.6, -0.4, 2.2);
+        final t = elapsed.inMicroseconds / 1e6;
+        transform.rotation.y = t * 0.7;
+      },
+    );
+  }
+}
+
 /// A small roughness x metalness gradient of PBR spheres along the
+
 /// bottom the same idea as reference_main.dart's comparison grid, but
 /// as part of a real lit scene rather than an isolated test page.
 class _PbrGradientRow extends StatelessWidget {
@@ -167,7 +223,7 @@ class _PbrGradientRow extends StatelessWidget {
         transform.position.set(0, -1.6, 1.5);
       },
       children: [
-        for (var i = 0; i < _roughness.length; i++)
+                for (var i = 0; i < _roughness.length; i++)
           Fiber3DMesh(
             geometry: Fiber3DSphere(radius: 0.32, widthSegments: 32, heightSegments: 24),
             material: Fiber3DStandardMaterial(
@@ -175,12 +231,18 @@ class _PbrGradientRow extends StatelessWidget {
               roughness: _roughness[i],
               metalness: 1.0,
             ),
+            showEdges: false,
             onFrame: (elapsed, delta, transform) {
               final x = (i - (_roughness.length - 1) / 2) * _spacing;
               transform.position.set(x, 0, 0);
+              final t = elapsed.inMicroseconds / 1e6;
+              // Slightly different speed per sphere so they don't spin
+              // in visually boring lockstep.
+              transform.rotation.y = t * (0.6 + i * 0.15);
             },
           ),
       ],
     );
   }
 }
+

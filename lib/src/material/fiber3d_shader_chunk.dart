@@ -2,6 +2,7 @@ import 'shader_chunk/fiber3d_begin_vertex.dart';
 import 'shader_chunk/fiber3d_beginnormal_vertex.dart';
 import 'shader_chunk/fiber3d_bsdfs.dart';
 import 'shader_chunk/fiber3d_defaultnormal_vertex.dart';
+import 'shader_chunk/fiber3d_gradientmap_pars_fragment.dart';
 import 'shader_chunk/fiber3d_normal_pars_vertex.dart';
 import 'shader_chunk/fiber3d_normal_vertex.dart';
 import 'shader_chunk/fiber3d_project_vertex.dart';
@@ -17,6 +18,8 @@ import 'shader_chunk/fiber3d_lights_pars_begin.dart';
 import 'shader_chunk/fiber3d_lights_phong_fragment.dart';
 import 'shader_chunk/fiber3d_lights_phong_pars_fragment.dart';
 import 'shader_chunk/fiber3d_lights_physical_fragment.dart';
+import 'shader_chunk/fiber3d_lights_toon_fragment.dart';
+import 'shader_chunk/fiber3d_lights_toon_pars_fragment.dart';
 import 'shader_chunk/fiber3d_lights_physical_pars_fragment.dart';
 import 'shader_chunk/fiber3d_metalnessmap_fragment.dart';
 import 'shader_chunk/fiber3d_normal_fragment_begin.dart';
@@ -41,6 +44,7 @@ class Fiber3DShaderChunk {
     'beginnormal_vertex': fiber3dBeginnormalVertex,
     'bsdfs': fiber3dBsdfs,
     'defaultnormal_vertex': fiber3dDefaultnormalVertex,
+    'gradientmap_pars_fragment': fiber3dGradientmapParsFragment,    
     'normal_pars_vertex': fiber3dNormalParsVertex,
     'normal_vertex': fiber3dNormalVertex,
     'project_vertex': fiber3dProjectVertex,
@@ -57,7 +61,9 @@ class Fiber3DShaderChunk {
     'lights_phong_pars_fragment': fiber3dLightsPhongParsFragment,    
     'lights_physical_fragment': fiber3dLightsPhysicalFragment,
     'lights_physical_pars_fragment': fiber3dLightsPhysicalParsFragment,    
-    'metalnessmap_fragment': fiber3dMetalnessmapFragment,
+    'lights_toon_fragment': fiber3dLightsToonFragment,
+    'lights_toon_pars_fragment': fiber3dLightsToonParsFragment,
+    'metalnessmap_fragment': fiber3dMetalnessmapFragment,    
     'normal_fragment_begin': fiber3dNormalFragmentBegin,
     'normal_pars_fragment': fiber3dNormalParsFragment,
     'opaque_fragment': fiber3dOpaqueFragment,

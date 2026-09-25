@@ -41,8 +41,10 @@ export 'src/light/fiber3d_point_light.dart';
 
 export 'src/material/fiber3d_basic_material.dart';
 export 'src/material/fiber3d_lambert_material.dart';
+export 'src/material/fiber3d_matcap_material.dart';
 export 'src/material/fiber3d_phong_material.dart';
 export 'src/material/fiber3d_standard_material.dart';
+export 'src/material/fiber3d_toon_material.dart';
 
 export 'src/renderer/fiber3d_canvas.dart';
 export 'src/renderer/fiber3d_tone_mapping.dart';
