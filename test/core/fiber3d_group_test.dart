@@ -28,12 +28,12 @@ void main() {
                     Fiber3DMesh(
                       key: meshKeyA,
                       geometry: Fiber3DBox(),
-                      material: const Fiber3DStandardMaterial(),
+                      material:  Fiber3DStandardMaterial(),
                     ),
                     Fiber3DMesh(
                       key: meshKeyB,
                       geometry: Fiber3DBox(),
-                      material: const Fiber3DStandardMaterial(),
+                      material:  Fiber3DStandardMaterial(),
                     ),
                   ],
                 ),
@@ -73,7 +73,7 @@ void main() {
                     Fiber3DMesh(
                       key: meshKey,
                       geometry: Fiber3DBox(),
-                      material: const Fiber3DStandardMaterial(),
+                      material: Fiber3DStandardMaterial(),
                     ),
                   ],
                 ),
@@ -107,7 +107,7 @@ void main() {
                 Fiber3DMesh(
                   key: meshKey,
                   geometry: Fiber3DBox(),
-                  material: const Fiber3DStandardMaterial(),
+                  material:  Fiber3DStandardMaterial(),
                 ),
               ],
             ),
@@ -142,7 +142,7 @@ void main() {
                         Fiber3DMesh(
                           key: meshKey,
                           geometry: Fiber3DBox(),
-                          material: const Fiber3DStandardMaterial(),
+                          material: Fiber3DStandardMaterial(),
                         ),
                       ],
                     ),

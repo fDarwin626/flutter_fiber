@@ -20,6 +20,8 @@ import 'shader_chunk/fiber3d_lights_phong_pars_fragment.dart';
 import 'shader_chunk/fiber3d_lights_physical_fragment.dart';
 import 'shader_chunk/fiber3d_lights_toon_fragment.dart';
 import 'shader_chunk/fiber3d_lights_toon_pars_fragment.dart';
+import 'shader_chunk/fiber3d_map_pars_fragment.dart';
+import 'shader_chunk/fiber3d_map_fragment.dart';
 import 'shader_chunk/fiber3d_lights_physical_pars_fragment.dart';
 import 'shader_chunk/fiber3d_metalnessmap_fragment.dart';
 import 'shader_chunk/fiber3d_normal_fragment_begin.dart';
@@ -63,6 +65,8 @@ class Fiber3DShaderChunk {
     'lights_physical_pars_fragment': fiber3dLightsPhysicalParsFragment,    
     'lights_toon_fragment': fiber3dLightsToonFragment,
     'lights_toon_pars_fragment': fiber3dLightsToonParsFragment,
+    'map_pars_fragment': fiber3dMapParsFragment,
+    'map_fragment': fiber3dMapFragment,
     'metalnessmap_fragment': fiber3dMetalnessmapFragment,    
     'normal_fragment_begin': fiber3dNormalFragmentBegin,
     'normal_pars_fragment': fiber3dNormalParsFragment,

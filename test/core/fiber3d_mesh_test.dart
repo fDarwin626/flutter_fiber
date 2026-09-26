@@ -17,7 +17,7 @@ void main() {
               children: [
                 Fiber3DMesh(
                   geometry: Fiber3DBox(),
-                  material: const Fiber3DStandardMaterial(),
+                  material: Fiber3DStandardMaterial(),
                 ),
               ],
             );
@@ -39,7 +39,7 @@ void main() {
           children: [
             Fiber3DMesh(
               geometry: Fiber3DBox(),
-              material: const Fiber3DStandardMaterial(),
+              material: Fiber3DStandardMaterial(),
               onFrame: (elapsed, delta, transform) => frameCount++,
             ),
           ],
@@ -67,7 +67,7 @@ void main() {
                 if (showMesh)
                   Fiber3DMesh(
                     geometry: Fiber3DBox(),
-                    material: const Fiber3DStandardMaterial(),
+                    material: Fiber3DStandardMaterial(),
                     onFrame: (elapsed, delta, transform) => frameCount++,
                   ),
                 TextButton(
@@ -103,7 +103,7 @@ void main() {
           children: [
             Fiber3DMesh(
               geometry: Fiber3DBox(),
-              material: const Fiber3DStandardMaterial(),
+              material: Fiber3DStandardMaterial(),
               onTap: () => tapped = true,
             ),
           ],

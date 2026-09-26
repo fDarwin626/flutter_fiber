@@ -4,7 +4,7 @@ import 'package:flutter_fiber/src/material/fiber3d_standard_material.dart';
 void main() {
   group('Fiber3DStandardMaterial', () {
     test('defaults match three.js (white, roughness 1, metalness 0)', () {
-      const material = Fiber3DStandardMaterial();
+      final material = Fiber3DStandardMaterial();
 
       expect(material.color, 0xffffff);
       expect(material.roughness, 1.0);
@@ -16,7 +16,7 @@ void main() {
     });
 
     test('decodes a custom color correctly', () {
-      const material = Fiber3DStandardMaterial(color: 0x3366ff);
+      final material = Fiber3DStandardMaterial(color: 0x3366ff);
 
       expect(material.r, closeTo(0x33 / 255.0, 1e-9));
       expect(material.g, closeTo(0x66 / 255.0, 1e-9));
@@ -24,7 +24,7 @@ void main() {
     });
 
     test('decodes a custom emissive color correctly', () {
-      const material = Fiber3DStandardMaterial(emissive: 0xff0000, emissiveIntensity: 2.0);
+      final material = Fiber3DStandardMaterial(emissive: 0xff0000, emissiveIntensity: 2.0);
 
       expect(material.emissiveR, closeTo(1.0, 1e-9));
       expect(material.emissiveG, closeTo(0.0, 1e-9));
@@ -33,7 +33,7 @@ void main() {
     });
 
     test('respects custom roughness and metalness', () {
-      const material = Fiber3DStandardMaterial(roughness: 0.4, metalness: 0.8);
+      final material = Fiber3DStandardMaterial(roughness: 0.4, metalness: 0.8);
 
       expect(material.roughness, 0.4);
       expect(material.metalness, 0.8);

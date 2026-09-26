@@ -51,7 +51,7 @@ class Fiber3DArrow extends StatelessWidget {
     final shaftLength = length - headLength;
     final shaftRadius = headRadius * shaftRadiusRatio;
 
-    final defaultMaterial = const Fiber3DStandardMaterial(
+    final defaultMaterial =  Fiber3DStandardMaterial(
       color: 0x999999,
       roughness: 0.5,
       metalness: 0.2,

@@ -1,3 +1,5 @@
+import 'package:flutter_fiber/src/material/fiber3d_texture.dart';
+
 class Fiber3DStandardMaterial {
   /// Base color of the material, as 0xRRGGBB.
   final int color;
@@ -22,7 +24,9 @@ class Fiber3DStandardMaterial {
   /// of smooth per-vertex-normal shading.
   final bool flatShading;
 
-  const Fiber3DStandardMaterial({
+  final Fiber3DTexture? map;
+
+  Fiber3DStandardMaterial({
     this.color = 0xffffff,
     this.roughness = 1.0,
     this.metalness = 0.0,
@@ -30,8 +34,8 @@ class Fiber3DStandardMaterial {
     this.emissiveIntensity = 1.0,
     this.wireframe = false,
     this.flatShading = false,
+    this.map,
   });
-
   double get r => ((color >> 16) & 0xff) / 255.0;
   double get g => ((color >> 8) & 0xff) / 255.0;
   double get b => (color & 0xff) / 255.0;

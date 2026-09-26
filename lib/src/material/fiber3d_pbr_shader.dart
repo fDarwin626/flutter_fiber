@@ -35,10 +35,13 @@ uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
 uniform mat3 normalMatrix;
 
+
 attribute vec3 position;
 attribute vec3 normal;
+attribute vec2 uv;
 
 varying vec3 vViewPosition;
+varying vec2 vUv;
 
 #include <common>
 #include <normal_pars_vertex>
@@ -53,6 +56,7 @@ void main() {
 	#include <project_vertex>
 
 	vViewPosition = - mvPosition.xyz;
+	vUv = uv;
 
 }
 ''';
@@ -79,6 +83,8 @@ $resolved""";
         '''
 #define STANDARD
 #define OPAQUE
+#define USE_MAP
+#define vMapUv vUv
 
 uniform vec3 diffuse;
 uniform vec3 emissive;
@@ -88,11 +94,14 @@ uniform float metalness;
 uniform float opacity;
 uniform bool isOrthographic;
 uniform mat4 viewMatrix;
+
 varying vec3 vViewPosition;
+varying vec2 vUv;
 
 $outputPrefix
 
 #include <common>
+#include <map_pars_fragment>
 #include <lights_pars_begin>
 #include <normal_pars_fragment>
 #include <lights_physical_pars_fragment>
@@ -103,10 +112,10 @@ void main() {
 \tReflectedLight reflectedLight = ReflectedLight( vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ) );
 \tvec3 totalEmissiveRadiance = emissive * emissiveIntensity;
 
+\t#include <map_fragment>
 \t#include <roughnessmap_fragment>
 \t#include <metalnessmap_fragment>
 \t#include <normal_fragment_begin>
-
 \t// accumulation
 \t#include <lights_physical_fragment>
 \t#include <lights_fragment_begin>

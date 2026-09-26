@@ -13,7 +13,6 @@ import 'package:flutter_fiber/src/light/fiber3d_ambient_light.dart';
 import 'package:flutter_fiber/src/light/fiber3d_point_light.dart';
 import 'package:flutter_fiber/src/camera/fiber3d_camera.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_torus_knot.dart';
-import 'package:flutter_fiber/src/geometry/fiber3d_icosahedron.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_sphere.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_octahedron.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_cone.dart';
@@ -121,12 +120,12 @@ class _LambertIcosahedron extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Fiber3DMesh(
-      geometry: Fiber3DIcosahedron(radius: 1.0),
+      geometry: Fiber3DTorus(radius: 0.9, tube: 0.5),
       material: Fiber3DLambertMaterial(
         color: 0x33aa77,
         flatShading: true,
       ),
-      showEdges: true,
+      showEdges: false,
       onFrame: (elapsed, delta, transform) {
         transform.position.set(-3.2, 0.6, -0.5);
         final t = elapsed.inMicroseconds / 1e6;
