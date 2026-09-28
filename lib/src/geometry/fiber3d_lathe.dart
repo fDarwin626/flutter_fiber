@@ -18,6 +18,7 @@ class Fiber3DLathe {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors;
   final List<int> indices = [];
 
   Fiber3DLathe({
@@ -25,13 +26,15 @@ class Fiber3DLathe {
     int segments = 12,
     this.phiStart = 0,
     double phiLength = pi * 2,
-  })  : points = points ?? [
-          [0, -0.5],
-          [0.5, 0],
-          [0, 0.5],
-        ],
-        segments = segments.floor(),
-        phiLength = phiLength.clamp(0, pi * 2) {
+  }) : points =
+           points ??
+           [
+             [0, -0.5],
+             [0.5, 0],
+             [0, 0.5],
+           ],
+       segments = segments.floor(),
+       phiLength = phiLength.clamp(0, pi * 2) {
     _build();
   }
 

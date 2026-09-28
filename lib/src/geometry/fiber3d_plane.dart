@@ -7,6 +7,7 @@ class Fiber3DPlane {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors;
   final List<int> indices = [];
 
   Fiber3DPlane({

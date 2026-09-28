@@ -14,6 +14,8 @@ import '../material/fiber3d_phong_shader.dart';
 import '../material/fiber3d_toon_shader.dart';
 import '../material/fiber3d_matcap_shader.dart';
 import '../material/fiber3d_texture.dart';
+import '../material/fiber3d_prefiltered_cube.dart';
+import '../material/fiber3d_procedural_sky.dart';
 import '../core/fiber3d_vector3.dart';
 import '../core/fiber3d_color.dart';
 import '../light/fiber3d_lights_state.dart';
@@ -80,6 +82,13 @@ class Fiber3DCanvas extends StatefulWidget {
   /// `renderer.toneMappingExposure`).
   final double toneMappingExposure;
 
+  /// Radiance source for the environment reflection cube map (Section 6).
+  /// Defaults to Fiber3DProceduralSky().radiance when null. Exists so
+  /// example/debug scenes can swap in a different source (e.g. a
+  /// checkerboard, for visually confirming roughness-dependent blur)
+  /// without changing the default every real app gets.
+  final Fiber3DRadianceFunction? envMapRadiance;
+
   Fiber3DCanvas({
     super.key,
     this.children = const [],
@@ -90,8 +99,8 @@ class Fiber3DCanvas extends StatefulWidget {
     this.colorManagement = true,
     this.toneMapping = Fiber3DToneMapping.none,
     this.toneMappingExposure = 1.0,
+    this.envMapRadiance,
   }) : camera = camera ?? Fiber3DCamera();
-
   @override
   State<Fiber3DCanvas> createState() => Fiber3DCanvasState();
 }
@@ -132,6 +141,16 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
 
   dynamic _whiteFallbackTexture;
 
+  /// The prefiltered environment cube map sampled by the PBR shader's
+  /// getIBLIrradiance/getIBLRadiance (Section 6). Uploaded once as
+  /// RGBA16F/FLOAT, one GL cube-map mip level per Fiber3DPrefilteredCube
+  /// lod. Source is the built-in procedural sky until a real HDRI path
+  /// exists.
+  dynamic _envMapTexture;
+
+  /// Last mip level of [_envMapTexture] — baked into the PBR fragment
+  /// shader as ENVMAP_MAX_LOD, so it must be known before _compileShader.
+  int _envMapMaxLod = Fiber3DPbrShader.defaultEnvMapMaxLod;
   bool get isGlReady => _glReady;
 
   Future<void> _initGl(Size size, double dpr) async {
@@ -167,10 +186,10 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       _sourceTexture = _defaultFramebufferTexture;
     }
 
-
     _setupDfgLutTexture();
     _setupWhiteFallbackTexture();
-    _compileShader();    
+    _setupEnvMapTexture();
+    _compileShader();
     _compileLambertShader();
     _compilePhongShader();
     _compileToonShader();
@@ -190,7 +209,8 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   int aPositionLocation = -1;
   int aNormalLocation = -1;
   int aUvLocation = -1;
-  int uModelViewMatrixLocation = -1;  
+  int aColorLocation = -1;
+  int uModelViewMatrixLocation = -1;
   int uProjectionMatrixLocation = -1;
   int uNormalMatrixLocation = -1;
   int uViewMatrixLocation = -1;
@@ -206,6 +226,11 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   int uAmbientLightColorLocation = -1;
   int uDfgLutLocation = -1;
   int uMapLocation = -1;
+  int uRoughnessMapLocation = -1;
+  int uMetalnessMapLocation = -1;
+  int uEnvMapLocation = -1;
+  int uEnvMapIntensityLocation = -1;
+  int uEnvMapRotationLocation = -1;
 
   List<int> uPointLightPositionLocations = [];
   List<int> uPointLightColorLocations = [];
@@ -224,6 +249,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     final gl = _glPlugin!.gl;
     final version = _glslVersion();
 
+
     final vs = _makeShader(
       gl,
       Fiber3DPbrShader.vertex(version),
@@ -237,6 +263,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
         outputColorSpace: widget.colorManagement
             ? Fiber3DColorSpace.srgb
             : Fiber3DColorSpace.linearSrgb,
+        envMapMaxLod: _envMapMaxLod,
       ),
       gl.FRAGMENT_SHADER,
     );
@@ -265,7 +292,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     aPositionLocation = gl.getAttribLocation(glProgram, 'position');
     aNormalLocation = gl.getAttribLocation(glProgram, 'normal');
     aUvLocation = gl.getAttribLocation(glProgram, 'uv');
-
+    aColorLocation = gl.getAttribLocation(glProgram, 'color');
     uModelViewMatrixLocation = gl.getUniformLocation(
       glProgram,
       'modelViewMatrix',
@@ -298,7 +325,17 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     );
     uDfgLutLocation = gl.getUniformLocation(glProgram, 'dfgLUT');
     uMapLocation = gl.getUniformLocation(glProgram, 'map');
-
+    uRoughnessMapLocation = gl.getUniformLocation(glProgram, 'roughnessMap');
+    uMetalnessMapLocation = gl.getUniformLocation(glProgram, 'metalnessMap');
+    uEnvMapLocation = gl.getUniformLocation(glProgram, 'envMap');
+    uEnvMapIntensityLocation = gl.getUniformLocation(
+      glProgram,
+      'envMapIntensity',
+    );
+    uEnvMapRotationLocation = gl.getUniformLocation(
+      glProgram,
+      'envMapRotation',
+    );
     uPointLightPositionLocations = List<int>.generate(
       Fiber3DPbrShader.maxPointLights,
       (i) => gl.getUniformLocation(glProgram, 'pointLights[$i].position'),
@@ -327,6 +364,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   int lambertAPositionLocation = -1;
   int lambertANormalLocation = -1;
   int lambertAUvLocation = -1;  
+  int lambertAColorLocation = -1;
   int uLambertModelViewMatrixLocation = -1;
   int uLambertProjectionMatrixLocation = -1;
   int uLambertNormalMatrixLocation = -1;
@@ -389,6 +427,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     );
     lambertANormalLocation = gl.getAttribLocation(lambertGlProgram, 'normal');
     lambertAUvLocation = gl.getAttribLocation(lambertGlProgram, 'uv');
+    lambertAColorLocation = gl.getAttribLocation(lambertGlProgram, 'color');
 
     uLambertModelViewMatrixLocation = gl.getUniformLocation(
       lambertGlProgram,
@@ -459,6 +498,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   int phongAPositionLocation = -1;
   int phongANormalLocation = -1;
   int phongAUvLocation = -1;
+  int phongAColorLocation = -1;
   int uPhongModelViewMatrixLocation = -1;
   int uPhongProjectionMatrixLocation = -1;
   int uPhongNormalMatrixLocation = -1;
@@ -518,7 +558,8 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     phongAPositionLocation = gl.getAttribLocation(phongGlProgram, 'position');
     phongANormalLocation = gl.getAttribLocation(phongGlProgram, 'normal');
     phongAUvLocation = gl.getAttribLocation(phongGlProgram, 'uv');
-
+    phongAColorLocation = gl.getAttribLocation(phongGlProgram, 'color');
+    
     uPhongModelViewMatrixLocation = gl.getUniformLocation(
       phongGlProgram,
       'modelViewMatrix',
@@ -588,6 +629,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   int toonAPositionLocation = -1;
   int toonANormalLocation = -1;
   int toonAUvLocation = -1;
+  int toonAColorLocation = -1;
   int uToonModelViewMatrixLocation = -1;
   int uToonProjectionMatrixLocation = -1;
   int uToonNormalMatrixLocation = -1;
@@ -647,6 +689,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     toonAPositionLocation = gl.getAttribLocation(toonGlProgram, 'position');
     toonANormalLocation = gl.getAttribLocation(toonGlProgram, 'normal');
     toonAUvLocation = gl.getAttribLocation(toonGlProgram, 'uv');
+    toonAColorLocation = gl.getAttribLocation(toonGlProgram, 'color');
 
     uToonModelViewMatrixLocation = gl.getUniformLocation(
       toonGlProgram,
@@ -704,6 +747,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   int matcapAPositionLocation = -1;
   int matcapANormalLocation = -1;
   int matcapAUvLocation = -1;
+  int matcapAColorLocation = -1;
   int uMatcapModelViewMatrixLocation = -1;
   int uMatcapProjectionMatrixLocation = -1;
   int uMatcapNormalMatrixLocation = -1;
@@ -754,6 +798,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     matcapAPositionLocation = gl.getAttribLocation(matcapGlProgram, 'position');
     matcapANormalLocation = gl.getAttribLocation(matcapGlProgram, 'normal');
     matcapAUvLocation = gl.getAttribLocation(matcapGlProgram, 'uv');
+    matcapAColorLocation = gl.getAttribLocation(matcapGlProgram, 'color');
 
     uMatcapModelViewMatrixLocation = gl.getUniformLocation(
       matcapGlProgram,
@@ -945,6 +990,55 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
 
+  /// Builds a PMREM-style prefiltered cube map from the built-in
+  /// procedural sky (no asset required) and uploads it as RGBA16F/FLOAT,
+  /// one GL cube-map level per Fiber3DPrefilteredCube lod. Sets
+  /// _envMapMaxLod, which _compileShader reads to bake ENVMAP_MAX_LOD —
+  /// must run before _compileShader.
+  void _setupEnvMapTexture() {
+    final gl = _glPlugin!.gl;
+
+    final radianceFn = widget.envMapRadiance ?? Fiber3DProceduralSky().radiance;
+    final cube = Fiber3DPrefilteredCube.generate(
+      radianceFn,
+      size: 128,
+      samples: 32,
+    );
+    _envMapMaxLod = cube.maxLod;
+
+    _envMapTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, _envMapTexture);
+
+    for (var lod = 0; lod <= cube.maxLod; lod++) {
+      final n = cube.faceSize(lod);
+      for (var face = 0; face < 6; face++) {
+        final data = Float32Array.fromList(cube.faces[lod][face]);
+        gl.texImage2D(
+          gl.TEXTURE_CUBE_MAP_POSITIVE_X + face,
+          lod,
+          gl.RGBA16F,
+          n,
+          n,
+          0,
+          gl.RGBA,
+          gl.FLOAT,
+          data,
+        );
+      }
+    }
+
+    gl.texParameteri(
+      gl.TEXTURE_CUBE_MAP,
+      gl.TEXTURE_MIN_FILTER,
+      gl.LINEAR_MIPMAP_LINEAR,
+    );
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, cube.maxLod);
+  }
+
   late final Ticker _ticker;
   Duration _lastElapsed = Duration.zero;
 
@@ -1090,7 +1184,8 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       gl.deleteBuffer(cached.positionBuffer);
       gl.deleteBuffer(cached.normalBuffer);
       gl.deleteBuffer(cached.uvBuffer);
-      gl.deleteBuffer(cached.indexBuffer);
+      gl.deleteBuffer(cached.colorBuffer);
+      gl.deleteBuffer(cached.indexBuffer);      
       if (cached.lineIndexBuffer != null) {
         gl.deleteBuffer(cached.lineIndexBuffer);
       }
@@ -1102,6 +1197,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     List<double>? positions;
     List<double>? normals;
     List<double>? uvs;
+    List<double>? colors;
     List<int>? indices;
 
     // Pattern-match the concrete geometry type see the note on
@@ -1116,13 +1212,24 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       uvs = rawUvs is List<double>
           ? rawUvs
           : List<double>.filled((positions.length ~/ 3) * 2, 0.0);
+      // colors is genuinely optional (nullable on every geometry, unlike
+      // uvs which is always-present-but-maybe-wrong-type) — fall back to
+      // an all-white buffer, matching USE_COLOR's white-is-a-no-op
+      // convention, same as the map white-fallback-texture.
+      final dynamic rawColors = geometry.colors;
+      colors = rawColors is List<double>
+          ? rawColors
+          : List<double>.filled((positions.length ~/ 3) * 3, 1.0);
       indices = geometry.indices as List<int>;
     }
 
-    if (positions == null || normals == null || uvs == null || indices == null) {
+    if (positions == null ||
+        normals == null ||
+        uvs == null ||
+        colors == null ||
+        indices == null) {
       return null;
     }
-
 
     // Flat shading: one normal per triangle instead of interpolated
     // Flat shading: one normal per triangle instead of interpolated
@@ -1133,6 +1240,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       final flatPositions = <double>[];
       final flatNormals = <double>[];
       final flatUvs = <double>[];
+      final flatColors = <double>[];
       final flatIndices = <int>[];
 
       for (var i = 0; i + 2 < indices.length; i += 3) {
@@ -1169,15 +1277,20 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
           uvs[ib * 2], uvs[ib * 2 + 1],
           uvs[ic * 2], uvs[ic * 2 + 1],
         ]);
+        flatColors.addAll([
+          colors[ia * 3], colors[ia * 3 + 1], colors[ia * 3 + 2],
+          colors[ib * 3], colors[ib * 3 + 1], colors[ib * 3 + 2],
+          colors[ic * 3], colors[ic * 3 + 1], colors[ic * 3 + 2],
+        ]);
         flatIndices.addAll([base, base + 1, base + 2]);
       }
 
       positions = flatPositions;
       normals = flatNormals;
       uvs = flatUvs;
+      colors = flatColors;
       indices = flatIndices;
     }
-
 
     final positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -1226,7 +1339,27 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       );
     }
 
+    final colorBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    final colorArray = Float32Array.fromList(colors);
+    if (kIsWeb) {
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        colorArray.length,
+        colorArray,
+        gl.STATIC_DRAW,
+      );
+    } else {
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        colorArray.lengthInBytes,
+        colorArray,
+        gl.STATIC_DRAW,
+      );
+    }
+
     final indexBuffer = gl.createBuffer();
+
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
     final idxArray = Uint16Array.fromList(indices);
@@ -1281,7 +1414,8 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       positionBuffer: positionBuffer,
       normalBuffer: normalBuffer,
       uvBuffer: uvBuffer,
-      indexBuffer: indexBuffer,      
+      colorBuffer: colorBuffer,
+      indexBuffer: indexBuffer,          
       indexCount: indices.length,
       lineIndexBuffer: lineIndexBuffer,
       lineIndexCount: lineIndexCount,
@@ -1349,6 +1483,15 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, _dfgLutTexture);
     gl.uniform1i(uDfgLutLocation, 1);
+
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, _envMapTexture);
+    gl.uniform1i(uEnvMapLocation, 5);
+    gl.uniformMatrix3fv(
+      uEnvMapRotationLocation,
+      false,
+      Float32Array.fromList([1, 0, 0, 0, 1, 0, 0, 0, 1]),
+    );
 
     if (widget.toneMapping != Fiber3DToneMapping.none) {
       gl.uniform1f(uToneMappingExposureLocation, widget.toneMappingExposure);
@@ -1606,6 +1749,15 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
                 : isMatcap
                     ? matcapAUvLocation
                     : aUvLocation;
+    final colorLoc = isLambert
+        ? lambertAColorLocation
+        : isPhong
+            ? phongAColorLocation
+            : isToon
+                ? toonAColorLocation
+                : isMatcap
+                    ? matcapAColorLocation
+                    : aColorLocation;
     final mvLoc = isLambert
         ? uLambertModelViewMatrixLocation
         : isPhong
@@ -1672,7 +1824,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       final emissive = _linearColor(material.emissive);
       gl.uniform3f(emissiveLoc, emissive.r, emissive.g, emissive.b);
       gl.uniform1f(emissiveIntensityLoc, material.emissiveIntensity);
-
+      gl.uniform1f(uEnvMapIntensityLocation, material.envMapIntensity);
       final Fiber3DTexture? map = material.map;
       final glMapTexture =
           map != null ? _glTextureFor(map) : null;
@@ -1682,7 +1834,28 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
         glMapTexture ?? _whiteFallbackTexture,
       );
       gl.uniform1i(uMapLocation, 2);
-    } else if (materialType == 'Fiber3DLambertMaterial') {      
+
+      final Fiber3DTexture? roughnessMap = material.roughnessMap;
+      final glRoughnessMapTexture =
+          roughnessMap != null ? _glTextureFor(roughnessMap) : null;
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(
+        gl.TEXTURE_2D,
+        glRoughnessMapTexture ?? _whiteFallbackTexture,
+      );
+      gl.uniform1i(uRoughnessMapLocation, 3);
+
+      final Fiber3DTexture? metalnessMap = material.metalnessMap;
+      final glMetalnessMapTexture =
+          metalnessMap != null ? _glTextureFor(metalnessMap) : null;
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(
+        gl.TEXTURE_2D,
+        glMetalnessMapTexture ?? _whiteFallbackTexture,
+      );
+      gl.uniform1i(uMetalnessMapLocation, 4);
+    } else if (materialType == 'Fiber3DLambertMaterial') {
+
       final base = _linearColor(material.color);
       gl.uniform3f(diffuseLoc, base.r, base.g, base.b);
       gl.uniform1f(opacityLoc, 1.0);
@@ -1734,8 +1907,13 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       gl.enableVertexAttribArray(uvLoc);
     }
 
-    final wireframeOnly = material.wireframe == true;
+    if (colorLoc >= 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.colorBuffer);
+      gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(colorLoc);
+    }
 
+    final wireframeOnly = material.wireframe == true;
     if (wireframeOnly && buffers.lineIndexBuffer != null) {
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.lineIndexBuffer);
       gl.drawElements(gl.LINES, buffers.lineIndexCount, gl.UNSIGNED_SHORT, 0);
@@ -1872,9 +2050,11 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       return;
     }
     for (final buffers in _meshBufferCache.values) {
+
       gl.deleteBuffer(buffers.positionBuffer);
       gl.deleteBuffer(buffers.normalBuffer);
       gl.deleteBuffer(buffers.uvBuffer);
+      gl.deleteBuffer(buffers.colorBuffer);
       gl.deleteBuffer(buffers.indexBuffer);
       if (buffers.lineIndexBuffer != null) {
         gl.deleteBuffer(buffers.lineIndexBuffer);
@@ -1902,6 +2082,10 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     }
     if (_dfgLutTexture != null) {
       gl.deleteTexture(_dfgLutTexture);
+    }
+
+    if (_envMapTexture != null) {
+      gl.deleteTexture(_envMapTexture);
     }
     
     if (_defaultDepthRenderbuffer != null) {
@@ -2041,11 +2225,12 @@ class _MeshBuffers {
   final dynamic positionBuffer;
   final dynamic normalBuffer;
   final dynamic uvBuffer;
+  final dynamic colorBuffer;
   final dynamic indexBuffer;
   final int indexCount;
-  /// Present only when the material requested wireframe rendering
-  /// each source triangle (a,b,c) contributes 3 line-index pairs
-  /// (a-b, b-c, c-a), drawn with GL_LINES instead of GL_TRIANGLES.
+/// Present only when the material requested wireframe rendering
+/// each source triangle (a,b,c) contributes 3 line-index pairs
+/// (a-b, b-c, c-a), drawn with GL_LINES instead of GL_TRIANGLES.
   final dynamic lineIndexBuffer;
   final int lineIndexCount;
 
@@ -2061,8 +2246,9 @@ class _MeshBuffers {
     required this.positionBuffer,
     required this.normalBuffer,
     required this.uvBuffer,
+    required this.colorBuffer,
     required this.indexBuffer,
-    required this.indexCount,
+    required this.indexCount,    
     this.lineIndexBuffer,
     this.lineIndexCount = 0,
     required this.builtWithEdges,

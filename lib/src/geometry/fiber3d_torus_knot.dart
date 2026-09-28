@@ -17,6 +17,7 @@ class Fiber3DTorusKnot {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors;
   final List<int> indices = [];
 
   Fiber3DTorusKnot({
@@ -26,8 +27,8 @@ class Fiber3DTorusKnot {
     int radialSegments = 8,
     this.p = 2,
     this.q = 3,
-  })  : tubularSegments = tubularSegments.floor(),
-        radialSegments = radialSegments.floor() {
+  }) : tubularSegments = tubularSegments.floor(),
+       radialSegments = radialSegments.floor() {
     _build();
   }
 

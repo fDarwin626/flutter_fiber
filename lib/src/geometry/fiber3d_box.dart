@@ -21,8 +21,11 @@ class Fiber3DBox {
   /// Flat list of vertex UVs, 2 floats (u, v) per vertex.
   final List<double> uvs = [];
 
+  List<double>? colors;
+
   /// Triangle indices into the position/normal/uv buffers.
   final List<int> indices = [];
+
 
   int _numberOfVertices = 0;
 

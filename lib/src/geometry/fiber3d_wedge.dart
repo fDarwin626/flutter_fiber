@@ -16,13 +16,10 @@ class Fiber3DWedge {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors; 
   final List<int> indices = [];
 
-  Fiber3DWedge({
-    this.width = 1,
-    this.height = 1,
-    this.depth = 1,
-  }) {
+  Fiber3DWedge({this.width = 1, this.height = 1, this.depth = 1}) {
     _build();
   }
 
@@ -62,10 +59,9 @@ class Fiber3DWedge {
     return [v[0] / len, v[1] / len, v[2] / len];
   }
 
-  double _len(List<double> v) =>
-      (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) == 0
-          ? 0
-          : _sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+  double _len(List<double> v) => (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) == 0
+      ? 0
+      : _sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
 
   double _sqrt(double x) {
     if (x <= 0) return 0;

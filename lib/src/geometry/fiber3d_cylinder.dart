@@ -13,6 +13,7 @@ class Fiber3DCylinder {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors;
   final List<int> indices = [];
 
   int _index = 0;
@@ -62,7 +63,9 @@ class Fiber3DCylinder {
         positions.addAll([vx, vy, vz]);
 
         // Normal = normalize(sinTheta, slope, cosTheta)
-        final len = sqrt(sinTheta * sinTheta + slope * slope + cosTheta * cosTheta);
+        final len = sqrt(
+          sinTheta * sinTheta + slope * slope + cosTheta * cosTheta,
+        );
         normals.addAll([sinTheta / len, slope / len, cosTheta / len]);
 
         uvs.add(u);

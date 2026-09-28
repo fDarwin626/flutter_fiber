@@ -12,8 +12,10 @@ class Fiber3DSphere {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
-  final List<int> indices = [];
 
+  List<double>? colors;
+
+  final List<int> indices = [];
   Fiber3DSphere({
     this.radius = 1,
     int widthSegments = 32,

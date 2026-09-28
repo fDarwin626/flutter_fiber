@@ -29,6 +29,7 @@ class Fiber3DSpring {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors;
   final List<int> indices = [];
 
   Fiber3DSpring({
@@ -38,8 +39,8 @@ class Fiber3DSpring {
     this.pitch = 0.5,
     int radialSegments = 16,
     int tubularSegments = 8,
-  })  : radialSegments = max(3, radialSegments),
-        tubularSegments = max(3, tubularSegments) {
+  }) : radialSegments = max(3, radialSegments),
+       tubularSegments = max(3, tubularSegments) {
     _build();
   }
 
@@ -62,8 +63,9 @@ class Fiber3DSpring {
       final tangentX = -sin(theta);
       final tangentY = pitch / (2 * pi);
       final tangentZ = cos(theta);
-      final tangentLen =
-          sqrt(tangentX * tangentX + tangentY * tangentY + tangentZ * tangentZ);
+      final tangentLen = sqrt(
+        tangentX * tangentX + tangentY * tangentY + tangentZ * tangentZ,
+      );
       final tx = tangentX / tangentLen;
       final ty = tangentY / tangentLen;
       final tz = tangentZ / tangentLen;
@@ -102,7 +104,8 @@ class Fiber3DSpring {
         // Normal points from the tube's center-line outward through
         // this vertex same direction as the offset, normalized.
         final nLen = sqrt(
-            offsetX * offsetX + offsetY * offsetY + offsetZ * offsetZ);
+          offsetX * offsetX + offsetY * offsetY + offsetZ * offsetZ,
+        );
         if (nLen > 0) {
           normals.addAll([offsetX / nLen, offsetY / nLen, offsetZ / nLen]);
         } else {

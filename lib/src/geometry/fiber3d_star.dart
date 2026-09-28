@@ -23,6 +23,7 @@ class Fiber3DStar {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors;
   final List<int> indices = [];
 
   Fiber3DStar({
@@ -97,10 +98,17 @@ class Fiber3DStar {
     for (var s = 0; s <= segments; s++) {
       positions.addAll([outlineX[s], outlineY[s], halfDepth]);
       normals.addAll([0, 0, 1]);
-      uvs.addAll([(outlineX[s] / outerRadius + 1) / 2, (outlineY[s] / outerRadius + 1) / 2]);
+      uvs.addAll([
+        (outlineX[s] / outerRadius + 1) / 2,
+        (outlineY[s] / outerRadius + 1) / 2,
+      ]);
     }
     for (var i = 0; i < segments; i++) {
-      indices.addAll([frontRingStart + i, frontRingStart + i + 1, frontCenterIndex]);
+      indices.addAll([
+        frontRingStart + i,
+        frontRingStart + i + 1,
+        frontCenterIndex,
+      ]);
     }
 
     // --- Back cap (z = -halfDepth), normal -Z, wound oppositely so it
@@ -114,12 +122,19 @@ class Fiber3DStar {
     for (var s = 0; s <= segments; s++) {
       positions.addAll([outlineX[s], outlineY[s], -halfDepth]);
       normals.addAll([0, 0, -1]);
-      uvs.addAll([(outlineX[s] / outerRadius + 1) / 2, (outlineY[s] / outerRadius + 1) / 2]);
+      uvs.addAll([
+        (outlineX[s] / outerRadius + 1) / 2,
+        (outlineY[s] / outerRadius + 1) / 2,
+      ]);
     }
     for (var i = 0; i < segments; i++) {
       // Reversed winding order vs. the front cap's fan, since this
       // cap faces the opposite direction.
-      indices.addAll([backRingStart + i + 1, backRingStart + i, backCenterIndex]);
+      indices.addAll([
+        backRingStart + i + 1,
+        backRingStart + i,
+        backCenterIndex,
+      ]);
     }
 
     // --- Side walls: one quad per outline edge, connecting the front

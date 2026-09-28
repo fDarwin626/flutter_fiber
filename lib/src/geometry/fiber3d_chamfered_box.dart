@@ -20,6 +20,7 @@ class Fiber3DChamferedBox {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors;
   final List<int> indices = [];
 
   Fiber3DChamferedBox({
@@ -28,8 +29,8 @@ class Fiber3DChamferedBox {
     this.depth = 1,
     double chamferAmount = 0.2,
     int segments = 8,
-  })  : chamferAmount = chamferAmount.clamp(0.0, 0.95),
-        segments = max(2, segments) {
+  }) : chamferAmount = chamferAmount.clamp(0.0, 0.95),
+       segments = max(2, segments) {
     _build();
   }
 
@@ -114,11 +115,11 @@ class Fiber3DChamferedBox {
       final ny = positions[i + 1] / halfH;
       final nz = positions[i + 2] / halfD;
 
-      final denom = pow(nx.abs(), exponent) +
+      final denom =
+          pow(nx.abs(), exponent) +
           pow(ny.abs(), exponent) +
           pow(nz.abs(), exponent);
-      final scale =
-          denom > 0 ? 1.0 / pow(denom, 1.0 / exponent) : 1.0;
+      final scale = denom > 0 ? 1.0 / pow(denom, 1.0 / exponent) : 1.0;
 
       positions[i] = nx * scale * halfW;
       positions[i + 1] = ny * scale * halfH;
@@ -135,9 +136,15 @@ class Fiber3DChamferedBox {
     for (var i = 0; i + 2 < indices.length; i += 3) {
       final ia = indices[i], ib = indices[i + 1], ic = indices[i + 2];
 
-      final ax = positions[ia * 3], ay = positions[ia * 3 + 1], az = positions[ia * 3 + 2];
-      final bx = positions[ib * 3], by = positions[ib * 3 + 1], bz = positions[ib * 3 + 2];
-      final cx = positions[ic * 3], cy = positions[ic * 3 + 1], cz = positions[ic * 3 + 2];
+      final ax = positions[ia * 3],
+          ay = positions[ia * 3 + 1],
+          az = positions[ia * 3 + 2];
+      final bx = positions[ib * 3],
+          by = positions[ib * 3 + 1],
+          bz = positions[ib * 3 + 2];
+      final cx = positions[ic * 3],
+          cy = positions[ic * 3 + 1],
+          cz = positions[ic * 3 + 2];
 
       final e1x = bx - ax, e1y = by - ay, e1z = bz - az;
       final e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
@@ -154,9 +161,11 @@ class Fiber3DChamferedBox {
     }
 
     for (var i = 0; i < normals.length; i += 3) {
-      final len = sqrt(accum[i] * accum[i] +
-          accum[i + 1] * accum[i + 1] +
-          accum[i + 2] * accum[i + 2]);
+      final len = sqrt(
+        accum[i] * accum[i] +
+            accum[i + 1] * accum[i + 1] +
+            accum[i + 2] * accum[i + 2],
+      );
       if (len > 0) {
         normals[i] = accum[i] / len;
         normals[i + 1] = accum[i + 1] / len;

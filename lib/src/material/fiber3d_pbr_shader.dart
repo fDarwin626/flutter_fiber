@@ -21,10 +21,8 @@ import 'shader_chunk/fiber3d_tonemapping_pars_fragment.dart';
 /// `projectionMatrix`, `normalMatrix` and `isOrthographic` are declared
 /// explicitly here rather than assumed.
 class Fiber3DPbrShader {
-  /// GLSL loop bounds must be compile-time constants, so NUM_POINT_LIGHTS
-  /// is fixed to this value rather than derived per-scene (see
-  /// Fiber3DShaderPreprocess). Unused light slots are zeroed at upload
-  /// time by the canvas.
+  static const int defaultEnvMapMaxLod = 4;
+
   static const int maxPointLights = 4;
 
   static String vertex(String version) {
@@ -36,18 +34,23 @@ uniform mat4 projectionMatrix;
 uniform mat3 normalMatrix;
 
 
+#define USE_COLOR
+
 attribute vec3 position;
 attribute vec3 normal;
 attribute vec2 uv;
+attribute vec3 color;
 
 varying vec3 vViewPosition;
 varying vec2 vUv;
 
 #include <common>
+#include <color_pars_vertex>
 #include <normal_pars_vertex>
 
 void main() {
 
+	#include <color_vertex>
 	#include <beginnormal_vertex>
 	#include <defaultnormal_vertex>
 	#include <normal_vertex>
@@ -60,6 +63,7 @@ void main() {
 
 }
 ''';
+
 
     final resolved = Fiber3DShaderChunk.resolveIncludes(body);
 
@@ -76,15 +80,25 @@ $resolved""";
     String version, {
     Fiber3DToneMapping toneMapping = Fiber3DToneMapping.none,
     Fiber3DColorSpace outputColorSpace = Fiber3DColorSpace.srgb,
+    int envMapMaxLod = defaultEnvMapMaxLod,
   }) {
     final outputPrefix = _outputPrefix(toneMapping, outputColorSpace);
 
     final body =
         '''
+
 #define STANDARD
 #define OPAQUE
 #define USE_MAP
 #define vMapUv vUv
+#define USE_COLOR
+#define USE_ROUGHNESSMAP
+#define vRoughnessMapUv vUv
+#define USE_METALNESSMAP
+#define vMetalnessMapUv vUv
+#define USE_ENVMAP
+#define ENVMAP_TYPE_PMREM
+#define ENVMAP_MAX_LOD $envMapMaxLod.0
 
 uniform vec3 diffuse;
 uniform vec3 emissive;
@@ -100,8 +114,14 @@ varying vec2 vUv;
 
 $outputPrefix
 
+
 #include <common>
+#include <envmap_common_pars_fragment>
+#include <envmap_physical_pars_fragment>
+#include <color_pars_fragment>
 #include <map_pars_fragment>
+#include <roughnessmap_pars_fragment>
+#include <metalnessmap_pars_fragment>
 #include <lights_pars_begin>
 #include <normal_pars_fragment>
 #include <lights_physical_pars_fragment>
@@ -113,6 +133,7 @@ void main() {
 \tvec3 totalEmissiveRadiance = emissive * emissiveIntensity;
 
 \t#include <map_fragment>
+\t#include <color_fragment>
 \t#include <roughnessmap_fragment>
 \t#include <metalnessmap_fragment>
 \t#include <normal_fragment_begin>

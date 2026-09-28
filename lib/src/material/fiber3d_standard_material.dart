@@ -26,6 +26,22 @@ class Fiber3DStandardMaterial {
 
   final Fiber3DTexture? map;
 
+  /// Roughness map, sampled from the G channel compatible with a
+  /// combined OcclusionRoughnessMetallic (ORM) texture, or its own
+  /// dedicated single-channel image, since the shader just reads
+  /// whatever's bound. Multiplies into [roughness], same white-fallback
+  /// no-op convention as [map].
+  final Fiber3DTexture? roughnessMap;
+
+  /// Metalness map, sampled from the B channel same ORM-compatible
+  /// convention as [roughnessMap]. Multiplies into [metalness].
+  final Fiber3DTexture? metalnessMap;
+
+  /// Intensity multiplier applied to the environment map's contribution
+  /// (both getIBLIrradiance and getIBLRadiance), matching three.js's
+  /// MeshStandardMaterial.envMapIntensity. 1.0 = unscaled.
+  final double envMapIntensity;
+
   Fiber3DStandardMaterial({
     this.color = 0xffffff,
     this.roughness = 1.0,
@@ -35,7 +51,11 @@ class Fiber3DStandardMaterial {
     this.wireframe = false,
     this.flatShading = false,
     this.map,
+    this.roughnessMap,
+    this.metalnessMap,
+    this.envMapIntensity = 1.0,
   });
+
   double get r => ((color >> 16) & 0xff) / 255.0;
   double get g => ((color >> 8) & 0xff) / 255.0;
   double get b => (color & 0xff) / 255.0;

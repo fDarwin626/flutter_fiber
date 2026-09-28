@@ -27,18 +27,23 @@ uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
 uniform mat3 normalMatrix;
 
+#define USE_COLOR
+
 attribute vec3 position;
 attribute vec3 normal;
 attribute vec2 uv;
+attribute vec3 color;
 
 varying vec3 vViewPosition;
 varying vec2 vUv;
 
 #include <common>
+#include <color_pars_vertex>
 #include <normal_pars_vertex>
 
 void main() {
 
+	#include <color_vertex>
 	#include <beginnormal_vertex>
 	#include <defaultnormal_vertex>
 	#include <normal_vertex>
@@ -50,7 +55,6 @@ void main() {
 	vUv = uv;
 
 }
-
 ''';
 
     final resolved = Fiber3DShaderChunk.resolveIncludes(body);
@@ -73,6 +77,7 @@ $resolved""";
         '''
 #define MATCAP
 #define OPAQUE
+#define USE_COLOR
 
 uniform vec3 diffuse;
 uniform float opacity;
@@ -84,14 +89,15 @@ varying vec2 vUv;
 $outputPrefix
 
 #include <common>
+#include <color_pars_fragment>
 #include <normal_pars_fragment>
 
 void main() {
 
 \tvec4 diffuseColor = vec4( diffuse, opacity );
 
+\t#include <color_fragment>
 \t#include <normal_fragment_begin>
-
 \tvec3 viewDir = normalize( vViewPosition );
 \tvec3 x = normalize( vec3( viewDir.z, 0.0, - viewDir.x ) );
 \tvec3 y = cross( viewDir, x );

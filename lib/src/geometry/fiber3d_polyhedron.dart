@@ -21,6 +21,7 @@ class Fiber3DPolyhedron {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors;
   final List<int> indices = [];
 
   Fiber3DPolyhedron(
@@ -53,7 +54,12 @@ class Fiber3DPolyhedron {
     positions.addAll([v[0], v[1], v[2]]);
   }
 
-  void _subdivideFace(List<double> a, List<double> b, List<double> c, int detail) {
+  void _subdivideFace(
+    List<double> a,
+    List<double> b,
+    List<double> c,
+    int detail,
+  ) {
     final cols = detail + 1;
 
     // v[i][j] grid used to build the subdivision, matching the source's

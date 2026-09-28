@@ -46,6 +46,9 @@ export 'src/material/fiber3d_phong_material.dart';
 export 'src/material/fiber3d_standard_material.dart';
 export 'src/material/fiber3d_texture.dart';
 export 'src/material/fiber3d_toon_material.dart';
+export 'src/material/fiber3d_prefiltered_cube.dart';
+export 'src/material/fiber3d_procedural_sky.dart';
+export 'src/material/fiber3d_checkerboard_sky.dart';
 
 export 'src/renderer/fiber3d_canvas.dart';
 export 'src/renderer/fiber3d_tone_mapping.dart';

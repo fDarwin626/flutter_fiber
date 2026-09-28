@@ -11,6 +11,7 @@ class Fiber3DRing {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors;
   final List<int> indices = [];
 
   Fiber3DRing({
@@ -20,8 +21,8 @@ class Fiber3DRing {
     int phiSegments = 1,
     this.thetaStart = 0,
     this.thetaLength = pi * 2,
-  })  : thetaSegments = max(3, thetaSegments),
-        phiSegments = max(1, phiSegments) {
+  }) : thetaSegments = max(3, thetaSegments),
+       phiSegments = max(1, phiSegments) {
     _build();
   }
 

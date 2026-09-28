@@ -15,6 +15,7 @@ class Fiber3DTorus {
   final List<double> positions = [];
   final List<double> normals = [];
   final List<double> uvs = [];
+  List<double>? colors;
   final List<int> indices = [];
 
   Fiber3DTorus({
@@ -25,8 +26,8 @@ class Fiber3DTorus {
     this.arc = pi * 2,
     this.thetaStart = 0,
     this.thetaLength = pi * 2,
-  })  : radialSegments = radialSegments.floor(),
-        tubularSegments = tubularSegments.floor() {
+  }) : radialSegments = radialSegments.floor(),
+       tubularSegments = tubularSegments.floor() {
     _build();
   }
 
