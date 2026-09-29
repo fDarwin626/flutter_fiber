@@ -88,7 +88,6 @@ $resolved""";
         '''
 
 #define STANDARD
-#define OPAQUE
 #define USE_MAP
 #define vMapUv vUv
 #define USE_COLOR
@@ -99,12 +98,15 @@ $resolved""";
 #define USE_ENVMAP
 #define ENVMAP_TYPE_PMREM
 #define ENVMAP_MAX_LOD $envMapMaxLod.0
+#define USE_CLEARCOAT
 
 uniform vec3 diffuse;
 uniform vec3 emissive;
 uniform float emissiveIntensity;
 uniform float roughness;
 uniform float metalness;
+uniform float clearcoat;
+uniform float clearcoatRoughness;
 uniform float opacity;
 uniform bool isOrthographic;
 uniform mat4 viewMatrix;
@@ -137,6 +139,11 @@ void main() {
 \t#include <roughnessmap_fragment>
 \t#include <metalnessmap_fragment>
 \t#include <normal_fragment_begin>
+
+\t#ifdef USE_CLEARCOAT
+\t\tvec3 clearcoatNormal = nonPerturbedNormal;
+\t#endif
+
 \t// accumulation
 \t#include <lights_physical_fragment>
 \t#include <lights_fragment_begin>
@@ -147,6 +154,14 @@ void main() {
 \tvec3 totalSpecular = reflectedLight.directSpecular + reflectedLight.indirectSpecular;
 
 \tvec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+
+\t#ifdef USE_CLEARCOAT
+
+\t\tfloat dotNVcc = saturate( dot( geometryClearcoatNormal, geometryViewDir ) );
+\t\tvec3 Fcc = F_Schlick( material.clearcoatF0, material.clearcoatF90, dotNVcc );
+\t\toutgoingLight = outgoingLight * ( 1.0 - material.clearcoat * Fcc ) + ( clearcoatSpecularDirect + clearcoatSpecularIndirect ) * material.clearcoat;
+
+\t#endif
 
 \t#include <opaque_fragment>
 \t#include <tonemapping_fragment>

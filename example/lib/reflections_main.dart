@@ -68,10 +68,15 @@ class ReflectionsDemo extends StatelessWidget {
             for (var i = 0; i < n; i++)
               Fiber3DMesh(
                 geometry: Fiber3DSphere(radius: 0.65),
+
                 material: Fiber3DStandardMaterial(
                   color: 0xffffff,
                   metalness: 1.0,
                   roughness: _roughnessSteps[i],
+                  // Clearcoat only on the last (roughest, blurriest) sphere
+                  // the other four stay clearcoat: 0.0 as the control.
+                  clearcoat: i == n - 1 ? 1.0 : 0.0,
+                  clearcoatRoughness: 0.05,
                 ),
                 showEdges:false,
                 hitRadius: 0.8,

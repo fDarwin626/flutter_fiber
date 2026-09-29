@@ -145,15 +145,20 @@ class _PbrHeroSphere extends StatelessWidget {
   Widget build(BuildContext context) {
     return Fiber3DMesh(
       geometry: Fiber3DSphere(radius: 1.0, widthSegments: 64, heightSegments: 48),
+
       material: Fiber3DStandardMaterial(
         color: 0x2255cc,
         roughness: 0.15,
         metalness: 0.6,
+        // gave every Standard material env reflections by
+        // default (envMapIntensity defaults to 1.0). This scene
+        // predates that and was designed around metal with no IBL at
+        // all -- zeroing it here restores the original comparison.
+        envMapIntensity: 0.0,
       ),
       showEdges: false,
       onFrame: (elapsed, delta, transform) {
-        transform.position.set(3.2, 0.6, -0.5);
-        final t = elapsed.inMicroseconds / 1e6;
+        transform.position.set(3.2, 0.6, -0.5);        final t = elapsed.inMicroseconds / 1e6;
         transform.rotation.y = t * 0.5;
       },
     );
@@ -222,14 +227,18 @@ class _PbrGradientRow extends StatelessWidget {
         transform.position.set(0, -1.6, 1.5);
       },
       children: [
-                for (var i = 0; i < _roughness.length; i++)
+         for (var i = 0; i < _roughness.length; i++)
           Fiber3DMesh(
             geometry: Fiber3DSphere(radius: 0.32, widthSegments: 32, heightSegments: 24),
             material: Fiber3DStandardMaterial(
               color: 0xdddddd,
               roughness: _roughness[i],
               metalness: 1.0,
-            ),
+              // Same reason as _PbrHeroSphere -- this gradient row is
+              // meant to isolate roughness's effect on the specular
+              // highlight alone, not env reflections.
+              envMapIntensity: 0.0,
+            ),            
             showEdges: false,
             onFrame: (elapsed, delta, transform) {
               final x = (i - (_roughness.length - 1) / 2) * _spacing;

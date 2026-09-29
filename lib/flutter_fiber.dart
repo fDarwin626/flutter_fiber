@@ -39,6 +39,8 @@ export 'src/geometry/fiber3d_chamfered_box.dart';
 export 'src/light/fiber3d_ambient_light.dart';
 export 'src/light/fiber3d_point_light.dart';
 
+export 'src/material/fiber3d_widget_texture.dart';
+export 'src/material/fiber3d_text_texture.dart';
 export 'src/material/fiber3d_basic_material.dart';
 export 'src/material/fiber3d_lambert_material.dart';
 export 'src/material/fiber3d_matcap_material.dart';

@@ -26,11 +26,6 @@ class Fiber3DStandardMaterial {
 
   final Fiber3DTexture? map;
 
-  /// Roughness map, sampled from the G channel compatible with a
-  /// combined OcclusionRoughnessMetallic (ORM) texture, or its own
-  /// dedicated single-channel image, since the shader just reads
-  /// whatever's bound. Multiplies into [roughness], same white-fallback
-  /// no-op convention as [map].
   final Fiber3DTexture? roughnessMap;
 
   /// Metalness map, sampled from the B channel same ORM-compatible
@@ -41,6 +36,27 @@ class Fiber3DStandardMaterial {
   /// (both getIBLIrradiance and getIBLRadiance), matching three.js's
   /// MeshStandardMaterial.envMapIntensity. 1.0 = unscaled.
   final double envMapIntensity;
+
+  /// Intensity of a clear, thin lacquer layer over the base material,
+  /// matching three.js's MeshPhysicalMaterial.clearcoat. 0.0 (default) =
+  /// off; 1.0 = full clearcoat.
+  final double clearcoat;
+
+  /// Roughness of the clearcoat layer itself, independent of the base
+  /// [roughness]. Matches MeshPhysicalMaterial.clearcoatRoughness.
+  final double clearcoatRoughness;
+
+  /// Alpha, 0.0 (fully invisible) to 1.0 (fully opaque). Has no visible
+  /// effect unless [transparent] is true — matches three.js's real
+  /// Material.opacity/transparent relationship.
+  final double opacity;
+
+  /// Enables real alpha blending for this mesh. Off by default (every
+  /// existing material stays exactly as opaque as before). Correct for
+  /// one transparent surface at a time — no depth-sorted transparent
+  /// pass exists yet, so multiple overlapping transparent meshes can
+  /// show sorting artifacts.
+  final bool transparent;
 
   Fiber3DStandardMaterial({
     this.color = 0xffffff,
@@ -54,8 +70,12 @@ class Fiber3DStandardMaterial {
     this.roughnessMap,
     this.metalnessMap,
     this.envMapIntensity = 1.0,
+    this.clearcoat = 0.0,
+    this.clearcoatRoughness = 0.0,
+    this.opacity = 1.0,
+    this.transparent = false,
   });
-
+    
   double get r => ((color >> 16) & 0xff) / 255.0;
   double get g => ((color >> 8) & 0xff) / 255.0;
   double get b => (color & 0xff) / 255.0;
