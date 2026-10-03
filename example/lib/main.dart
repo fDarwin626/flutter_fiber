@@ -25,6 +25,7 @@ import 'package:flutter_fiber/src/geometry/fiber3d_octahedron.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_tetrahedron.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_star.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_wedge.dart';
+import 'package:flutter_fiber/src/geometry/fiber3d_prism.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_spring.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_chamfered_box.dart';
 import 'package:flutter_fiber/src/geometry/fiber3d_arrow.dart';
@@ -73,6 +74,8 @@ final List<_ShapeEntry> _shapes = [
   _ShapeEntry('Tetrahedron', () => Fiber3DTetrahedron(radius: 1.2)),
   _ShapeEntry('Star', () => Fiber3DStar(outerRadius: 1.2, innerRadius: 0.5, points: 5, depth: 0.3)),
   _ShapeEntry('Wedge (ramp)', () => Fiber3DWedge(width: 1.5, height: 1.0, depth: 1.5)),
+  _ShapeEntry('Prism (hexagonal)', () => Fiber3DPrism(radius: 1.1, height: 1.6, sides: 6)),
+  _ShapeEntry('Prism (triangular)', () => Fiber3DPrism(radius: 1.1, height: 1.6, sides: 3)),
   _ShapeEntry('Spring', () => Fiber3DSpring(radius: 0.8, tubeRadius: 0.15, turns: 4, pitch: 0.5)),
   _ShapeEntry('Chamfered Box', () => Fiber3DChamferedBox(width: 1.4, height: 1.4, depth: 1.4, chamferAmount: 0.4)),
   _ShapeEntry('Arrow', () => null),

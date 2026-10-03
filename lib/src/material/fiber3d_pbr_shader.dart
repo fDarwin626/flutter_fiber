@@ -14,7 +14,6 @@ import 'shader_chunk/fiber3d_tonemapping_pars_fragment.dart';
 /// fog, no morph/skin/batching/instancing, no clearcoat/sheen/iridescence/
 /// anisotropy/transmission (all still behind their #ifdef guards and
 /// simply never triggered), and no environment maps (so indirect specular
-/// is always zero black metals until Section 6).
 ///
 /// Because flutter_fiber has no WebGLProgram-style automatic uniform/
 /// attribute injection, `position`, `normal`, `modelViewMatrix`,
@@ -25,6 +24,7 @@ class Fiber3DPbrShader {
 
   static const int maxPointLights = 4;
 
+  static const int maxHemiLights = 1;
   static String vertex(String version) {
     const body = r'''
 #define STANDARD
@@ -81,6 +81,7 @@ $resolved""";
     Fiber3DToneMapping toneMapping = Fiber3DToneMapping.none,
     Fiber3DColorSpace outputColorSpace = Fiber3DColorSpace.srgb,
     int envMapMaxLod = defaultEnvMapMaxLod,
+    int numHemiLights = maxHemiLights,
   }) {
     final outputPrefix = _outputPrefix(toneMapping, outputColorSpace);
 
@@ -174,6 +175,7 @@ void main() {
     final withNums = Fiber3DShaderPreprocess.replaceLightNums(
       resolved,
       numPointLights: maxPointLights,
+      numHemiLights: numHemiLights,
     );
     final unrolled = Fiber3DShaderPreprocess.unrollLoops(withNums);
 

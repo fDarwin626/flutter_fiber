@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -56,8 +57,24 @@ class _Hittable {
 class _LightsSnapshot {
   final List<double> ambient;
   final List<Fiber3DPointLightUniforms> points;
+  final Fiber3DHemisphereLightUniforms? hemisphere;
 
-  _LightsSnapshot({required this.ambient, required this.points});
+  _LightsSnapshot({
+    required this.ambient,
+    required this.points,
+    this.hemisphere,
+  });
+}
+
+Uint8List _flipRowsRgba8(Uint8List pixels, int width, int height) {
+  final stride = width * 4;
+  final flipped = Uint8List(pixels.length);
+  for (var y = 0; y < height; y++) {
+    final srcStart = y * stride;
+    final dstStart = (height - 1 - y) * stride;
+    flipped.setRange(dstStart, dstStart + stride, pixels, srcStart);
+  }
+  return flipped;
 }
 
 class Fiber3DCanvas extends StatefulWidget {
@@ -160,7 +177,6 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   /// shader as ENVMAP_MAX_LOD, so it must be known before _compileShader.
   int _envMapMaxLod = Fiber3DPbrShader.defaultEnvMapMaxLod;
   bool get isGlReady => _glReady;
-
   Future<void> _initGl(Size size, double dpr) async {
     if (_glInitStarted) return;
     _glInitStarted = true;
@@ -241,7 +257,10 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   int uEnvMapRotationLocation = -1;
   int uClearcoatLocation = -1;
   int uClearcoatRoughnessLocation = -1;
-  List<int> uPointLightPositionLocations = [];
+  int uHemisphereDirectionLocation = -1;
+  int uHemisphereSkyColorLocation = -1;
+  int uHemisphereGroundColorLocation = -1;
+  List<int> uPointLightPositionLocations = [];  
   List<int> uPointLightColorLocations = [];
   List<int> uPointLightDistanceLocations = [];
   List<int> uPointLightDecayLocations = [];
@@ -265,6 +284,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     );
     final fs = _makeShader(
       gl,
+
       Fiber3DPbrShader.fragment(
         version,
         toneMapping: widget.toneMapping,
@@ -272,6 +292,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
             ? Fiber3DColorSpace.srgb
             : Fiber3DColorSpace.linearSrgb,
         envMapMaxLod: _envMapMaxLod,
+        numHemiLights: Fiber3DPbrShader.maxHemiLights,
       ),
       gl.FRAGMENT_SHADER,
     );
@@ -350,7 +371,19 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       glProgram,
       'clearcoatRoughness',
     );
-    uPointLightPositionLocations = List<int>.generate(
+    uHemisphereDirectionLocation = gl.getUniformLocation(
+      glProgram,
+      'hemisphereLights[0].direction',
+    );
+    uHemisphereSkyColorLocation = gl.getUniformLocation(
+      glProgram,
+      'hemisphereLights[0].skyColor',
+    );
+    uHemisphereGroundColorLocation = gl.getUniformLocation(
+      glProgram,
+      'hemisphereLights[0].groundColor',
+    );
+    uPointLightPositionLocations = List<int>.generate(      
       Fiber3DPbrShader.maxPointLights,
       (i) => gl.getUniformLocation(glProgram, 'pointLights[$i].position'),
     );
@@ -1134,10 +1167,21 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
   dynamic _glTextureFor(Fiber3DTexture texture) {
     final cached = _textureCache[texture];
     if (cached != null) {
+
       if (texture.needsUpdate) {
         final gl = _glPlugin!.gl;
         gl.bindTexture(gl.TEXTURE_2D, cached);
-        final data = Uint8Array.fromList(texture.pixels!);
+        // CPU-side flip see _flipRowsRgba8's doc for why. Scoped to
+        // this image path only: the DFG LUT and env cube map are
+        // computed data, not images, and must NOT be flipped or their
+        // row order (and the lighting math that depends on it) breaks
+        // silently.
+        final flipped = _flipRowsRgba8(
+          texture.pixels!,
+          texture.width!,
+          texture.height!,
+        );
+        final data = Uint8Array.fromList(flipped);
         gl.texImage2D(
           gl.TEXTURE_2D,
           0,
@@ -1162,11 +1206,20 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       return null;
     }
 
+
     final gl = _glPlugin!.gl;
     final glTexture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, glTexture);
 
-    final data = Uint8Array.fromList(texture.pixels!);
+    // See the needsUpdate branch above and _flipRowsRgba8's doc for
+    // why this CPU-side flip exists and why it's scoped to image
+    // uploads only.
+    final flipped = _flipRowsRgba8(
+      texture.pixels!,
+      texture.width!,
+      texture.height!,
+    );
+    final data = Uint8Array.fromList(flipped);
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -1237,7 +1290,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
           ? rawUvs
           : List<double>.filled((positions.length ~/ 3) * 2, 0.0);
       // colors is genuinely optional (nullable on every geometry, unlike
-      // uvs which is always-present-but-maybe-wrong-type) — fall back to
+      // uvs which is always-present-but-maybe-wrong-type) fall back to
       // an all-white buffer, matching USE_COLOR's white-is-a-no-op
       // convention, same as the map white-fallback-texture.
       final dynamic rawColors = geometry.colors;
@@ -1531,6 +1584,22 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     // Light uniforms, computed once and applied to every compiled
     // program in turn (PBR always exists; Lambert only if wired).
     final lights = _computeLights();
+
+    final hemi = lights.hemisphere;
+    if (hemi != null) {
+      gl.uniform3f(uHemisphereDirectionLocation, hemi.dirX, hemi.dirY, hemi.dirZ);
+      gl.uniform3f(uHemisphereSkyColorLocation, hemi.skyR, hemi.skyG, hemi.skyB);
+      gl.uniform3f(
+        uHemisphereGroundColorLocation,
+        hemi.groundR,
+        hemi.groundG,
+        hemi.groundB,
+      );
+    } else {
+      gl.uniform3f(uHemisphereDirectionLocation, 0, 1, 0);
+      gl.uniform3f(uHemisphereSkyColorLocation, 0, 0, 0);
+      gl.uniform3f(uHemisphereGroundColorLocation, 0, 0, 0);
+    }
     _applyLights(
       gl,
       lights,
@@ -1650,6 +1719,7 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
     var ambientColorsLinear = <List<double>>[];
     var ambientIntensities = <double>[];
     final pointLightUniforms = <Fiber3DPointLightUniforms>[];
+    Fiber3DHemisphereLightUniforms? hemisphereLightUniforms;
 
     for (final light in widget.lights) {
       final typeName = light.runtimeType.toString();
@@ -1672,7 +1742,24 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
             viewMatrix: _camera.viewMatrix,
           ),
         );
+      } else if (typeName == 'Fiber3DHemisphereLight' &&
+          hemisphereLightUniforms == null) {
+        final skyColor = _linearColor(light.skyColor);
+        final skyR = skyColor.r;
+        final skyG = skyColor.g;
+        final skyB = skyColor.b;
+        final groundColor = _linearColor(light.groundColor);
+        hemisphereLightUniforms = Fiber3DLightsState.hemisphereLightUniforms(
+          x: light.direction.x,
+          y: light.direction.y,
+          z: light.direction.z,
+          skyColorLinear: [skyR, skyG, skyB],
+          groundColorLinear: [groundColor.r, groundColor.g, groundColor.b],
+          intensity: light.intensity,
+          viewMatrix: _camera.viewMatrix,
+        );
       }
+
     }
 
     final ambient = Fiber3DLightsState.sumAmbient(
@@ -1680,9 +1767,12 @@ class Fiber3DCanvasState extends State<Fiber3DCanvas>
       intensities: ambientIntensities,
     );
 
-    return _LightsSnapshot(ambient: ambient, points: pointLightUniforms);
+    return _LightsSnapshot(
+      ambient: ambient,
+      points: pointLightUniforms,
+      hemisphere: hemisphereLightUniforms,
+    );
   }
-
   void _applyLights(
     dynamic gl,
     _LightsSnapshot lights,

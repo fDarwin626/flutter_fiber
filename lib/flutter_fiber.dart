@@ -23,6 +23,7 @@ export 'src/geometry/fiber3d_dodecahedron.dart';
 export 'src/geometry/fiber3d_icosahedron.dart';
 export 'src/geometry/fiber3d_lathe.dart';
 export 'src/geometry/fiber3d_plane.dart';
+export 'src/geometry/fiber3d_prism.dart';
 export 'src/geometry/fiber3d_polyhedron.dart';
 export 'src/geometry/fiber3d_ring.dart';
 export 'src/geometry/fiber3d_sphere.dart';
@@ -38,6 +39,7 @@ export 'src/geometry/fiber3d_chamfered_box.dart';
 
 export 'src/light/fiber3d_ambient_light.dart';
 export 'src/light/fiber3d_point_light.dart';
+export 'src/light/fiber3d_hemisphere_light.dart';
 
 export 'src/material/fiber3d_widget_texture.dart';
 export 'src/material/fiber3d_text_texture.dart';
@@ -54,3 +56,7 @@ export 'src/material/fiber3d_checkerboard_sky.dart';
 
 export 'src/renderer/fiber3d_canvas.dart';
 export 'src/renderer/fiber3d_tone_mapping.dart';
+
+export 'src/loader/gltf/fiber3d_gltf_scene.dart';
+export 'src/loader/gltf/fiber3d_gltf_loader.dart';
+export 'src/loader/gltf/fiber3d_gltf_model.dart';

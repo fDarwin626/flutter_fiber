@@ -16,6 +16,9 @@ const _internal = <String>{
   'src/material/fiber3d_matcap_shader.dart',
   'src/material/fiber3d_program_functions.dart',   
   'src/material/fiber3d_shader_chunk.dart',
+  'src/loader/gltf/fiber3d_glb_container.dart',
+  'src/loader/gltf/fiber3d_gltf_accessor.dart',
+  'src/loader/gltf/fiber3d_gltf_material.dart',
 };
 void main() {
   test('every public file under lib/src is exported from flutter_fiber.dart', () {

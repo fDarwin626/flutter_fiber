@@ -1,7 +1,11 @@
 class Fiber3DShaderPreprocess {
   Fiber3DShaderPreprocess._();
 
-  static String replaceLightNums(String source, {required int numPointLights}) {
+  static String replaceLightNums(
+    String source, {
+    required int numPointLights,
+    int numHemiLights = 0,
+  }) {
     return source
         .replaceAll('NUM_SUN_LIGHTS', '0')
         .replaceAll('NUM_DIR_LIGHTS', '0')
@@ -9,7 +13,7 @@ class Fiber3DShaderPreprocess {
         .replaceAll('NUM_SPOT_LIGHT_COORDS', '0')
         .replaceAll('NUM_RECT_AREA_LIGHTS', '0')
         .replaceAll('NUM_POINT_LIGHTS', '$numPointLights')
-        .replaceAll('NUM_HEMI_LIGHTS', '0')
+        .replaceAll('NUM_HEMI_LIGHTS', '$numHemiLights')        
         .replaceAll('NUM_SUN_LIGHT_SHADOWS', '0')
         .replaceAll('NUM_DIR_LIGHT_SHADOWS', '0')
         .replaceAll('NUM_SPOT_LIGHT_SHADOWS_WITH_MAPS', '0')

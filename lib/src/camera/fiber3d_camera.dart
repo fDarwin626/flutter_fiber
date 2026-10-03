@@ -10,10 +10,10 @@ import '../core/fiber3d_quaternion.dart';
 /// Ported from three.js's `PerspectiveCamera`, scoped down to v1's actual
 /// needs: fov, aspect, near, far, position, and a look-at target. Zoom,
 /// view offset (multi-monitor setups), filmGauge/filmOffset/focus, and
-/// the focal-length conversions are all dropped — none appear in the
+/// the focal-length conversions are all dropped none appear in the
 /// PRD's own usage example, and none are meaningful without features
 ///
-/// Orbit/pinch-zoom controls are a separate, later feature — this class
+/// Orbit/pinch-zoom controls are a separate, later feature this class
 /// only provides the view + projection math needed for correct 3D
 /// rendering and, next, raycasting.
 class Fiber3DCamera {
@@ -78,7 +78,7 @@ class Fiber3DCamera {
   }
 
   /// Builds a world-space ray from normalized device coordinates (each
-  /// in [-1, 1]) — the same setFromCamera logic three.js's Raycaster uses:
+  /// in [-1, 1]) the same setFromCamera logic three.js's Raycaster uses:
   /// unproject a point in clip space back to world space via the inverse
   /// projection matrix, then transform by the camera's world matrix.
   Fiber3DRay rayFromNdc(double ndcX, double ndcY) {
