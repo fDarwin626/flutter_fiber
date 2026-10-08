@@ -2,11 +2,11 @@ import '../../core/fiber3d_color_management.dart';
 import '../../material/fiber3d_standard_material.dart';
 import '../../material/fiber3d_texture.dart';
 
-/// Maps a glTF material (metallic-roughness model — the only one the
+/// Maps a glTF material (metallic-roughness model the only one the
 /// spec itself defines; `KHR_materials_*` extensions are not supported)
 /// onto Fiber3DStandardMaterial.
 ///
-/// `normalTexture` and `emissiveTexture` are not applied — flutter_fiber
+/// `normalTexture` and `emissiveTexture` are not applied flutter_fiber
 /// has no normal-mapping or emissive-map path yet. `alphaMode: "MASK"`
 /// (alpha-cutout) is treated as opaque there's no discard/cutout
 /// support in the shader, so rendering it as BLEND would be wrong in a
@@ -28,7 +28,7 @@ class Fiber3DGltfMaterial {
   /// `textures` array is indexed.
   static Fiber3DStandardMaterial build({
     required Map<String, dynamic>? materialJson,
-    required List<Fiber3DTexture> textures,
+    required List<Fiber3DTexture?> textures,
   }) {
     if (materialJson == null) {
       // glTF's own spec-defined default material: white, fully metallic,
@@ -51,6 +51,21 @@ class Fiber3DGltfMaterial {
         (materialJson['emissiveFactor'] as List?)?.map((e) => (e as num).toDouble()).toList() ??
             const [0.0, 0.0, 0.0];
     final alphaMode = materialJson['alphaMode'] as String? ?? 'OPAQUE';
+
+    final extensions =
+        (materialJson['extensions'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{};
+    final clearcoatExt =
+        (extensions['KHR_materials_clearcoat'] as Map?)?.cast<String, dynamic>();
+    final emissiveStrengthExt =
+        (extensions['KHR_materials_emissive_strength'] as Map?)
+            ?.cast<String, dynamic>();
+    final clearcoat =
+        (clearcoatExt?['clearcoatFactor'] as num?)?.toDouble() ?? 0.0;
+    final clearcoatRoughness =
+        (clearcoatExt?['clearcoatRoughnessFactor'] as num?)?.toDouble() ?? 0.0;
+    final emissiveStrength =
+        (emissiveStrengthExt?['emissiveStrength'] as num?)?.toDouble() ?? 1.0;
 
     Fiber3DTexture? resolveTexture(Map<String, dynamic>? texRef) {
       final index = texRef?['index'] as int?;
@@ -75,9 +90,12 @@ class Fiber3DGltfMaterial {
         emissiveFactor[1],
         emissiveFactor.length > 2 ? emissiveFactor[2] : 0.0,
       ),
+      emissiveIntensity: emissiveStrength,
+      clearcoat: clearcoat,
+      clearcoatRoughness: clearcoatRoughness,
       map: baseColorTexture,
       // glTF packs roughness in the G channel and metalness in the B
-      // channel of ONE combined texture — Fiber3DStandardMaterial's own
+      // channel of ONE combined texture Fiber3DStandardMaterial's own
       // roughnessMap/metalnessMap docs already describe sampling exactly
       // this way, so pointing both fields at the same decoded texture is
       // the documented, correct usage, not a workaround.

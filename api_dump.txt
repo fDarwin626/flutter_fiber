@@ -1,0 +1,3541 @@
+]633;E;{ for f in   lib/src/core/fiber3d_mesh.dart lib/src/core/fiber3d_group.dart   lib/src/core/fiber3d_object.dart lib/src/core/fiber3d_vector3.dart   lib/src/core/fiber3d_mutable_vector3.dart lib/src/camera/fiber3d_camera.dart   lib/src/renderer/fiber3d_tone_mapping.dart   lib/src/material/fiber3d_texture.dart lib/src/material/fiber3d_widget_texture.dart   lib/src/material/fiber3d_text_texture.dart lib/src/material/fiber3d_procedural_sky.dart   lib/src/material/fiber3d_checkerboard_sky.dart   lib/src/material/fiber3d_basic_material.dart lib/src/material/fiber3d_lambert_material.dart   lib/src/material/fiber3d_phong_material.dart lib/src/material/fiber3d_toon_material.dart   lib/src/material/fiber3d_matcap_material.dart   lib/src/light/fiber3d_ambient_light.dart lib/src/light/fiber3d_point_light.dart   lib/src/light/fiber3d_hemisphere_light.dart   lib/src/loader/gltf/fiber3d_gltf_model.dart lib/src/loader/gltf/fiber3d_gltf_scene.dart\x3b do   echo "=== $f"\x3b cat "$f"\x3b done\x3b for f in lib/src/geometry/*.dart\x3b do   echo "=== $f"\x3b   case "$f" in *arrow*|*polyhedron*) cat "$f"\x3b\x3b *) head -70 "$f"\x3b\x3b esac\x3b done\x3b for f in lib/src/camera/fiber3d_orbit_controls.dart lib/src/core/fiber3d_matrix4.dart   lib/src/core/fiber3d_quaternion.dart lib/src/core/fiber3d_ray.dart   lib/src/core/fiber3d_color.dart lib/src/core/fiber3d_color_management.dart\x3b do   echo "=== $f"\x3b head -50 "$f"\x3b done\x3b grep -rn "typedef Fiber3DRadianceFunction" lib/src\x3b } > api_dump.txt;afc6979f-509b-4901-aab6-21746531ae9b]633;C=== lib/src/core/fiber3d_mesh.dart
+import 'package:flutter/widgets.dart';
+import '../renderer/fiber3d_canvas.dart';
+import 'fiber3d_group.dart';
+import 'fiber3d_object.dart';
+import 'fiber3d_vector3.dart';
+
+/// A renderable mesh: a geometry, a material, and its own transform
+/// (position/rotation/scale via [transform]).
+///
+/// Geometry and material are typed `dynamic` deliberately flutter_fiber's
+/// 5 geometries and 2 materials are plain data classes with no shared base
+/// type, and retrofitting an inheritance hierarchy onto already-tested
+/// code isn't worth it for what the renderer needs (a runtime type check
+/// to pick the right buffer-building/uniform-upload path). The renderer
+/// (Fiber3DCanvas's render loop) pattern-matches on the concrete type.
+///
+/// Registers itself with the ancestor [Fiber3DCanvas] on mount and
+/// unregisters on dispose same lifecycle-safe pattern as onFrame and
+/// hittable registration, so a mesh removed from the tree can never leak
+/// into the render loop.
+class Fiber3DMesh extends StatefulWidget {
+  final dynamic geometry;
+  final dynamic material;
+
+  final void Function(Duration elapsed, Duration delta, Fiber3DObject transform)? onFrame;
+  final VoidCallback? onTap;
+  final void Function(Offset delta)? onPan;
+  final void Function(double scale)? onPinch;
+
+  /// Bounding-sphere radius used for tap/pan hit-testing. A caller who
+  /// knows their geometry's extent can override this; otherwise a
+  /// reasonable default is used.
+  final double hitRadius;
+
+  final bool showEdges;
+
+  /// Built-in pinch-to-scale. Off by default — an explicit opt-in, not a
+  /// forced behavior. When true, the mesh handles clamped scaling itself
+  /// (anchored to scale at gesture start, so it can't compound across
+  /// ticks), rather than relying on the caller's own onPinch math.
+  final bool enablePinchScale;
+  final double minPinchScale;
+  final double maxPinchScale;
+
+  const Fiber3DMesh({
+    super.key,
+    required this.geometry,
+    required this.material,
+    this.onFrame,
+    this.onTap,
+    this.onPan,
+    this.onPinch,
+    this.hitRadius = 1.0,
+    this.showEdges = true,
+    this.enablePinchScale = false,
+    this.minPinchScale = 0.3,
+    this.maxPinchScale = 3.0,
+  });
+  @override
+  State<Fiber3DMesh> createState() => Fiber3DMeshState();
+}
+
+class Fiber3DMeshState extends State<Fiber3DMesh> {
+  /// The mesh's own scene-graph transform — exposed so callers can do
+  /// `mesh.transform.rotation.y += delta` inside an onFrame callback,
+  /// matching the PRD's own usage pattern.
+  final Fiber3DObject transform = Fiber3DObject();
+
+    VoidCallback? _unregisterFrame;
+  VoidCallback? _unregisterHittable;
+  VoidCallback? _unregisterMesh;
+
+  double _gestureStartScale = 1.0;
+
+  void _onPinchStart() {
+    // Anchor to the scale as it stood before this gesture — scale from
+    // ScaleUpdateDetails is cumulative-since-gesture-start, so this is
+    // what stops it compounding across gestures or overshooting.
+    _gestureStartScale = transform.scale.x;
+  }
+
+  void _onPinch(double scale) {
+    final target = (_gestureStartScale * scale)
+        .clamp(widget.minPinchScale, widget.maxPinchScale);
+    transform.scale.set(target, target, target);
+    widget.onPinch?.call(scale);
+  }
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final canvasState = context.findAncestorStateOfType<Fiber3DCanvasState>();
+    assert(canvasState != null,
+        'Fiber3DMesh must be a descendant of Fiber3DCanvas.');
+
+    _unregisterMesh?.call();
+    _unregisterMesh = canvasState?.registerMesh(this);
+
+    // If nested inside a Fiber3DGroup, attach this mesh's transform as a
+    // child of the group's transform so the group's own transform
+    // composes into this mesh's matrixWorld automatically. Registration
+    // in the canvas's flat _meshes set (above) is unaffected — draw-loop
+    // iteration stays flat; only transform.parent carries the hierarchy.
+    final parentGroup = Fiber3DGroupScope.maybeOf(context);
+    if (parentGroup != null && transform.parent != parentGroup.transform) {
+      parentGroup.transform.add(transform);
+    }
+    
+    if (widget.onFrame != null) {
+      _unregisterFrame?.call();
+      _unregisterFrame = canvasState?.registerFrameCallback((elapsed, delta) {
+        widget.onFrame!(elapsed, delta, transform);
+      });
+    }
+    final wantsHitTest = widget.onTap != null ||
+        widget.onPan != null ||
+        widget.onPinch != null ||
+        widget.enablePinchScale;
+    if (wantsHitTest) {
+      _unregisterHittable?.call();
+      _unregisterHittable = canvasState?.registerHittable(
+        getPosition: () {
+          final pos = transform.position;
+          return Fiber3DVector3(pos.x, pos.y, pos.z);
+        },
+        radius: widget.hitRadius,
+        onTap: widget.onTap,
+        onPan: widget.onPan,
+        onPinchStart: widget.enablePinchScale ? _onPinchStart : null,
+        onPinch: widget.enablePinchScale ? _onPinch : widget.onPinch,
+      );
+    }    
+
+  }
+
+  @override
+  void dispose() {
+    _unregisterMesh?.call();
+    _unregisterFrame?.call();
+    _unregisterHittable?.call();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Fiber3DMesh has no visual footprint of its own in the Flutter
+    // widget tree — it's rendered by Fiber3DCanvas's GL draw loop, not
+    // by returning a widget subtree here.
+    return const SizedBox.shrink();
+  }
+}=== lib/src/core/fiber3d_group.dart
+import 'package:flutter/widgets.dart';
+import 'package:flutter_fiber/src/renderer/fiber3d_canvas.dart';
+import 'fiber3d_object.dart';
+
+/// A grouping container with no geometry/material of its own — lets
+/// multiple Fiber3DMesh (or nested Fiber3DGroup) children be positioned,
+/// rotated, and scaled together as one logical unit, instead of the
+/// caller manually syncing several independent transforms by hand.
+///
+/// Mirrors three.js's `Group`/`Object3D`-as-container pattern: a group
+/// is just a transform node in the scene graph with children attached
+/// via Fiber3DObject.add(), so parent transforms compose into children's
+/// matrixWorld automatically (already correct, untouched machinery in
+/// Fiber3DObject.updateMatrixWorld).
+class Fiber3DGroup extends StatefulWidget {
+  final List<Widget> children;
+
+  /// Per-frame callback for the group's own transform — rotate/move the
+  /// group once here and every child mesh moves with it, same pattern
+  /// as Fiber3DMesh.onFrame.
+  final void Function(Duration elapsed, Duration delta, Fiber3DObject transform)? onFrame;
+
+  const Fiber3DGroup({
+    super.key,
+    required this.children,
+    this.onFrame,
+  });
+
+  @override
+  State<Fiber3DGroup> createState() => Fiber3DGroupState();
+}
+class Fiber3DGroupState extends State<Fiber3DGroup> {
+  /// The group's own transform. Fiber3DMesh/Fiber3DGroup children look
+  /// this up via _Fiber3DGroupScope and add() their own transform to it,
+  /// exactly like they'd otherwise stay flat under the canvas.
+  final Fiber3DObject transform = Fiber3DObject();
+
+  VoidCallback? _unregisterFrame;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final parentGroup = Fiber3DGroupScope.maybeOf(context);
+    if (parentGroup != null && transform.parent != parentGroup.transform) {
+      parentGroup.transform.add(transform);
+    }
+
+    if (widget.onFrame != null) {
+      final canvasState = context.findAncestorStateOfType<Fiber3DCanvasState>();
+      assert(canvasState != null,
+          'Fiber3DGroup with onFrame must be a descendant of Fiber3DCanvas.');
+      _unregisterFrame?.call();
+      _unregisterFrame = canvasState?.registerFrameCallback((elapsed, delta) {
+        widget.onFrame!(elapsed, delta, transform);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    transform.removeFromParent();
+    _unregisterFrame?.call();
+    super.dispose();
+  }
+  @override
+  Widget build(BuildContext context) {
+    return _Fiber3DGroupScope(
+      state: this,
+      child: Stack(children: widget.children),
+    );
+  }
+}
+
+/// InheritedWidget exposing the nearest Fiber3DGroup's transform, same
+/// scoping pattern as _Fiber3DCanvasScope. A Fiber3DMesh mounted inside
+/// a group finds this and attaches to it instead of being a root
+/// transform.
+class _Fiber3DGroupScope extends InheritedWidget {
+  final Fiber3DGroupState state;
+
+  const _Fiber3DGroupScope({required this.state, required super.child});
+
+  @override
+  bool updateShouldNotify(_Fiber3DGroupScope oldWidget) => false;
+}
+
+/// Public lookup for the nearest Fiber3DGroup's transform, used by
+/// Fiber3DMesh (and nested Fiber3DGroup) to find their parent group.
+class Fiber3DGroupScope {
+  static Fiber3DGroupState? maybeOf(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<_Fiber3DGroupScope>()
+        ?.state;
+  }
+}=== lib/src/core/fiber3d_object.dart
+
+import 'dart:math';
+import 'fiber3d_vector3.dart';
+import 'fiber3d_mutable_vector3.dart';
+import 'fiber3d_quaternion.dart';
+import 'fiber3d_matrix4.dart';
+
+class Fiber3DObject {
+  String name = '';
+
+  final Fiber3DMutableVector3 position = Fiber3DMutableVector3.zero();
+
+  /// Local rotation as Euler angles (radians), XYZ order — the only
+  /// order flutter_fiber v1 supports.
+  final Fiber3DMutableVector3 rotation = Fiber3DMutableVector3.zero();
+
+  final Fiber3DQuaternion quaternion = Fiber3DQuaternion.identity();
+  final Fiber3DMutableVector3 scale = Fiber3DMutableVector3.all(1);
+
+  /// The "up" direction, used by [lookAt].
+  final Fiber3DMutableVector3 up = Fiber3DMutableVector3(0, 1, 0);
+
+  /// Pivot point for rotation/scale when set, rotation and scale are
+  /// applied around this point instead of the object's origin.
+  Fiber3DMutableVector3? pivot;
+
+  bool visible = true;
+
+  final Map<String, dynamic> userData = {};
+
+  Fiber3DObject? parent;
+  final List<Fiber3DObject> children = [];
+
+  final Fiber3DMatrix4 matrix = Fiber3DMatrix4();
+  final Fiber3DMatrix4 matrixWorld = Fiber3DMatrix4();
+
+  bool matrixAutoUpdate = true;
+  bool matrixWorldNeedsUpdate = false;
+
+  void Function()? onDispose;
+
+  bool _syncingRotation = false;
+
+  Fiber3DObject() {
+    // Cross-sync rotation <--> quaternion, mirroring three.js's
+    // Vector3/Quaternion _onChange` pattern. The shared guard prevents
+    // either handler from re-triggering the other in an infinite loop —
+    // only one sync direction is ever "in flight" at a time.
+    rotation.onChange = () {
+      if (_syncingRotation) return;
+      _syncingRotation = true;
+      quaternion.setFromEuler(rotation.x, rotation.y, rotation.z, notify: false);
+      _syncingRotation = false;
+    };
+
+    quaternion.onChange = () {
+      if (_syncingRotation) return;
+      _syncingRotation = true;
+      _updateRotationFromQuaternion();
+      _syncingRotation = false;
+    };
+  }
+
+  /// Extracts XYZ-order Euler angles from the current quaternion by
+  /// composing it into a rotation matrix (reusing the already-tested
+  /// Matrix4.compose) and applying the standard XYZ extraction formula.
+  void _updateRotationFromQuaternion() {
+    final m = Fiber3DMatrix4();
+    m.compose(Fiber3DMutableVector3.zero(), quaternion, Fiber3DMutableVector3.all(1));
+    final te = m.elements;
+
+    final m11 = te[0], m13 = te[8];
+    final m22 = te[5], m23 = te[9];
+    final m32 = te[6], m33 = te[10];
+    final m12 = te[4];
+
+    double ex, ey, ez;
+    ey = asin(m13.clamp(-1.0, 1.0));
+
+    if (m13.abs() < 0.9999999) {
+      ex = atan2(-m23, m33);
+      ez = atan2(-m12, m11);
+    } else {
+      ex = atan2(m32, m22);
+      ez = 0;
+    }
+
+    rotation.set(ex, ey, ez);
+  }
+
+  // --- Scene graph ---
+
+  void add(Fiber3DObject child) {
+    if (identical(child, this)) return;
+    child.removeFromParent();
+    child.parent = this;
+    children.add(child);
+  }
+
+  void remove(Fiber3DObject child) {
+    final index = children.indexOf(child);
+    if (index != -1) {
+      child.parent = null;
+      children.removeAt(index);
+    }
+  }
+
+  void removeFromParent() {
+    parent?.remove(this);
+  }
+
+  void clear() {
+    for (final child in List<Fiber3DObject>.from(children)) {
+      remove(child);
+    }
+  }
+
+  // --- Matrix updates ---
+
+  void updateMatrix() {
+    matrix.compose(position, quaternion, scale);
+
+    final p = pivot;
+    if (p != null) {
+      final px = p.x, py = p.y, pz = p.z;
+      final te = matrix.elements;
+      te[12] += px - te[0] * px - te[4] * py - te[8] * pz;
+      te[13] += py - te[1] * px - te[5] * py - te[9] * pz;
+      te[14] += pz - te[2] * px - te[6] * py - te[10] * pz;
+    }
+
+    matrixWorldNeedsUpdate = true;
+  }
+
+  void updateMatrixWorld([bool force = false]) {
+    if (matrixAutoUpdate) updateMatrix();
+
+    if (matrixWorldNeedsUpdate || force) {
+      if (parent == null) {
+        matrixWorld.elements.setAll(0, matrix.elements);
+      } else {
+        matrixWorld.multiplyMatrices(parent!.matrixWorld, matrix);
+      }
+      matrixWorldNeedsUpdate = false;
+      force = true;
+    }
+
+    for (final child in children) {
+      child.updateMatrixWorld(force);
+    }
+  }
+
+  void updateWorldMatrix({
+    bool updateParents = false,
+    bool updateChildren = false,
+    bool force = false,
+  }) {
+    final p = parent;
+    if (updateParents && p != null) {
+      p.updateWorldMatrix(updateParents: true);
+    }
+
+    if (matrixAutoUpdate) updateMatrix();
+
+    if (matrixWorldNeedsUpdate || force) {
+      if (parent == null) {
+        matrixWorld.elements.setAll(0, matrix.elements);
+      } else {
+        matrixWorld.multiplyMatrices(parent!.matrixWorld, matrix);
+      }
+      matrixWorldNeedsUpdate = false;
+      force = true;
+    }
+
+    if (updateChildren) {
+      for (final child in children) {
+        child.updateWorldMatrix(updateChildren: true, force: force);
+      }
+    }
+  }
+
+  // --- Transform utilities ---
+
+  void applyMatrix4(Fiber3DMatrix4 m) {
+    if (matrixAutoUpdate) updateMatrix();
+    matrix.premultiply(m);
+    matrix.decompose(position, quaternion, scale);
+  }
+
+  void applyQuaternion(Fiber3DQuaternion q) {
+    quaternion.premultiply(q);
+  }
+
+  void rotateOnAxis(Fiber3DVector3 axis, double angle) {
+    final q = Fiber3DQuaternion();
+    q.setFromAxisAngle(axis, angle);
+    quaternion.multiply(q);
+  }
+
+  void rotateOnWorldAxis(Fiber3DVector3 axis, double angle) {
+    final q = Fiber3DQuaternion();
+    q.setFromAxisAngle(axis, angle);
+    quaternion.premultiply(q);
+  }
+
+  void rotateX(double angle) => rotateOnAxis(const Fiber3DVector3(1, 0, 0), angle);
+  void rotateY(double angle) => rotateOnAxis(const Fiber3DVector3(0, 1, 0), angle);
+  void rotateZ(double angle) => rotateOnAxis(const Fiber3DVector3(0, 0, 1), angle);
+
+  /// Translates along [axis] (in local/object space) by [distance] —
+  /// rotates the axis by this object's current orientation first.
+  void translateOnAxis(Fiber3DVector3 axis, double distance) {
+    final vx = axis.x, vy = axis.y, vz = axis.z;
+    final qx = quaternion.x, qy = quaternion.y, qz = quaternion.z, qw = quaternion.w;
+
+    final tx = 2 * (qy * vz - qz * vy);
+    final ty = 2 * (qz * vx - qx * vz);
+    final tz = 2 * (qx * vy - qy * vx);
+
+    final rx = vx + qw * tx + (qy * tz - qz * ty);
+    final ry = vy + qw * ty + (qz * tx - qx * tz);
+    final rz = vz + qw * tz + (qx * ty - qy * tx);
+
+    position.x += rx * distance;
+    position.y += ry * distance;
+    position.z += rz * distance;
+  }
+
+  void translateX(double distance) => translateOnAxis(const Fiber3DVector3(1, 0, 0), distance);
+  void translateY(double distance) => translateOnAxis(const Fiber3DVector3(0, 1, 0), distance);
+  void translateZ(double distance) => translateOnAxis(const Fiber3DVector3(0, 0, 1), distance);
+
+  // --- World-space queries ---
+
+  Fiber3DVector3 getWorldPosition() {
+    updateWorldMatrix(updateParents: true);
+    final te = matrixWorld.elements;
+    return Fiber3DVector3(te[12], te[13], te[14]);
+  }
+
+  Fiber3DQuaternion getWorldQuaternion() {
+    updateWorldMatrix(updateParents: true);
+    final pos = Fiber3DMutableVector3.zero();
+    final q = Fiber3DQuaternion();
+    final scl = Fiber3DMutableVector3.all(1);
+    matrixWorld.decompose(pos, q, scl);
+    return q;
+  }
+
+  Fiber3DVector3 getWorldScale() {
+    updateWorldMatrix(updateParents: true);
+    final pos = Fiber3DMutableVector3.zero();
+    final q = Fiber3DQuaternion();
+    final scl = Fiber3DMutableVector3.all(1);
+    matrixWorld.decompose(pos, q, scl);
+    return Fiber3DVector3(scl.x, scl.y, scl.z);
+  }
+
+  Fiber3DVector3 getWorldDirection() {
+    updateWorldMatrix(updateParents: true);
+    final e = matrixWorld.elements;
+    final x = e[8], y = e[9], z = e[10];
+    final len = sqrt(x * x + y * y + z * z);
+    if (len == 0) return const Fiber3DVector3(0, 0, 1);
+    return Fiber3DVector3(x / len, y / len, z / len);
+  }
+
+  Fiber3DVector3 localToWorld(Fiber3DVector3 v) {
+    updateWorldMatrix(updateParents: true);
+    final r = matrixWorld.transformPoint(v.x, v.y, v.z);
+    return Fiber3DVector3(r[0], r[1], r[2]);
+  }
+
+  Fiber3DVector3 worldToLocal(Fiber3DVector3 v) {
+    updateWorldMatrix(updateParents: true);
+    final inv = matrixWorld.clone();
+    inv.invert();
+    final r = inv.transformPoint(v.x, v.y, v.z);
+    return Fiber3DVector3(r[0], r[1], r[2]);
+  }
+
+  /// Rotates the object to face [target] in world space. Does not
+  /// support objects with non-uniformly-scaled parents (same limitation
+  /// three.js's own lookAt documents).
+  void lookAt(Fiber3DVector3 target) {
+    updateWorldMatrix(updateParents: true);
+    final worldPos = getWorldPosition();
+
+    final m = Fiber3DMatrix4();
+    final upVec = Fiber3DVector3(up.x, up.y, up.z);
+    m.lookAt(target, worldPos, upVec);
+    quaternion.setFromRotationMatrix(m);
+
+    final p = parent;
+    if (p != null) {
+      final parentRot = p.matrixWorld.clone();
+      final dummyPos = Fiber3DMutableVector3.zero();
+      final parentQuat = Fiber3DQuaternion();
+      final dummyScale = Fiber3DMutableVector3.all(1);
+      parentRot.decompose(dummyPos, parentQuat, dummyScale);
+      parentQuat.invert();
+      quaternion.premultiply(parentQuat);
+    }
+  }
+
+  // --- Traversal & lookup ---
+
+  void traverse(void Function(Fiber3DObject) callback) {
+    callback(this);
+    for (final child in List<Fiber3DObject>.from(children)) {
+      child.traverse(callback);
+    }
+  }
+
+  void traverseVisible(void Function(Fiber3DObject) callback) {
+    if (!visible) return;
+    callback(this);
+    for (final child in List<Fiber3DObject>.from(children)) {
+      child.traverseVisible(callback);
+    }
+  }
+
+  void traverseAncestors(void Function(Fiber3DObject) callback) {
+    final p = parent;
+    if (p != null) {
+      callback(p);
+      p.traverseAncestors(callback);
+    }
+  }
+
+  Fiber3DObject? getObjectByName(String targetName) {
+    if (name == targetName) return this;
+    for (final child in children) {
+      final found = child.getObjectByName(targetName);
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  List<Fiber3DObject> getObjectsByName(String targetName, [List<Fiber3DObject>? result]) {
+    result ??= [];
+    if (name == targetName) result.add(this);
+    for (final child in children) {
+      child.getObjectsByName(targetName, result);
+    }
+    return result;
+  }
+
+  // --- Clone / copy ---
+
+  Fiber3DObject clone({bool recursive = true}) {
+    final c = Fiber3DObject();
+    c.copy(this, recursive: recursive);
+    return c;
+  }
+
+  void copy(Fiber3DObject source, {bool recursive = true}) {
+    name = source.name;
+    up.copy(source.up);
+    position.copy(source.position);
+    quaternion.copy(source.quaternion);
+    scale.copy(source.scale);
+    pivot = source.pivot?.clone();
+    matrix.elements.setAll(0, source.matrix.elements);
+    matrixWorld.elements.setAll(0, source.matrixWorld.elements);
+    matrixAutoUpdate = source.matrixAutoUpdate;
+    visible = source.visible;
+    userData.clear();
+    userData.addAll(source.userData);
+
+    if (recursive) {
+      for (final child in source.children) {
+        add(child.clone());
+      }
+    }
+  }
+
+  // --- Lifecycle ---
+
+  void dispose() {
+    onDispose?.call();
+  }
+}=== lib/src/core/fiber3d_vector3.dart
+import 'dart:math';
+
+class Fiber3DVector3 {
+  final double x;
+  final double y;
+  final double z;
+
+  const Fiber3DVector3(this.x, this.y, this.z);
+
+  const Fiber3DVector3.zero() : x = 0, y = 0, z = 0;
+
+  Fiber3DVector3.all(double value) : x = value, y = value, z = value;
+
+  double get length => sqrt(x * x + y * y + z * z);
+}=== lib/src/core/fiber3d_mutable_vector3.dart
+import 'dart:math';
+import 'fiber3d_vector3.dart';
+
+class Fiber3DMutableVector3 {
+  double _x;
+  double _y;
+  double _z;
+
+  /// Called whenever x, y, or z changes via a setter (including `+=`,
+  /// which Dart desugars to a getter-then-setter call) or via [set].
+  /// Used by Fiber3DObject to keep rotation (Euler) and its internal
+  /// quaternion in sync, mirroring three.js's Vector3/Euler `_onChange`
+  /// pattern — same mechanism, same reason.
+  void Function()? onChange;
+
+  Fiber3DMutableVector3([double x = 0, double y = 0, double z = 0])
+      : _x = x, _y = y, _z = z;
+
+  Fiber3DMutableVector3.zero() : _x = 0, _y = 0, _z = 0;
+
+  Fiber3DMutableVector3.all(double value) : _x = value, _y = value, _z = value;
+
+  double get x => _x;
+  set x(double value) {
+    _x = value;
+    onChange?.call();
+  }
+
+  double get y => _y;
+  set y(double value) {
+    _y = value;
+    onChange?.call();
+  }
+
+  double get z => _z;
+  set z(double value) {
+    _z = value;
+    onChange?.call();
+  }
+
+  void set(double x, double y, double z) {
+    _x = x;
+    _y = y;
+    _z = z;
+    onChange?.call();
+  }
+  void copy(Fiber3DMutableVector3 v) {
+    _x = v.x;
+    _y = v.y;
+    _z = v.z;
+  }
+
+  void add(Fiber3DMutableVector3 v) {
+    x += v.x;
+    y += v.y;
+    z += v.z;
+  }
+
+  void subtract(Fiber3DMutableVector3 v) {
+    x -= v.x;
+    y -= v.y;
+    z -= v.z;
+  }
+
+  void multiplyScalar(double scalar) {
+    x *= scalar;
+    y *= scalar;
+    z *= scalar;
+  }
+
+  double get length => sqrt(x * x + y * y + z * z);
+
+  void normalize(){
+    final l = length;
+    if (l == 0) return;
+    x /= l;
+    y /= l;
+    z /= l;
+  }
+
+    /// Converts to the immutable [Fiber3DVector3] used elsewhere (e.g.
+  /// passing a Fiber3DObject's world position into a ray or camera call).
+    Fiber3DVector3 toImmutable() => Fiber3DVector3(x, y, z);
+      Fiber3DMutableVector3 clone() => Fiber3DMutableVector3(x, y, z);
+
+}
+=== lib/src/camera/fiber3d_camera.dart
+import 'dart:math';
+import '../core/fiber3d_vector3.dart';
+import '../core/fiber3d_matrix4.dart';
+import '../core/fiber3d_ray.dart';
+import '../core/fiber3d_mutable_vector3.dart';
+import '../core/fiber3d_quaternion.dart';
+
+/// A camera using perspective projection.
+///
+/// Ported from three.js's `PerspectiveCamera`, scoped down to v1's actual
+/// needs: fov, aspect, near, far, position, and a look-at target. Zoom,
+/// view offset (multi-monitor setups), filmGauge/filmOffset/focus, and
+/// the focal-length conversions are all dropped none appear in the
+/// PRD's own usage example, and none are meaningful without features
+///
+/// Orbit/pinch-zoom controls are a separate, later feature this class
+/// only provides the view + projection math needed for correct 3D
+/// rendering and, next, raycasting.
+class Fiber3DCamera {
+  final double fov;
+  final double aspect;
+  final double near;
+  final double far;
+  final Fiber3DVector3 position;
+  final Fiber3DVector3 target;
+  final Fiber3DVector3 up;
+
+  Fiber3DCamera({
+    this.fov = 50,
+    this.aspect = 1,
+    this.near = 0.1,
+    this.far = 2000,
+    this.position = const Fiber3DVector3(0, 0, 5),
+    this.target = const Fiber3DVector3.zero(),
+    this.up = const Fiber3DVector3(0, 1, 0),
+  });
+
+  /// Ported from three.js's PerspectiveCamera.updateProjectionMatrix,
+  /// with zoom and view-offset logic dropped.
+  Fiber3DMatrix4 get projectionMatrix {
+    final top = near * tan(_degToRad(0.5 * fov));
+    final height = 2 * top;
+    final width = aspect * height;
+    final left = -0.5 * width;
+
+    final m = Fiber3DMatrix4();
+    m.makePerspective(left, left + width, top, top - height, near, far);
+    return m;
+  }
+
+  /// The camera's world transform, composed through a real quaternion —
+  /// reconciled with Fiber3DObject's architecture now that
+  /// Fiber3DQuaternion/Fiber3DMatrix4.compose exist. lookAt uses the
+  /// (eye, target) argument order, matching three.js's Object3D.lookAt
+  /// camera branch (non-camera objects use the opposite order — see the
+  /// note in Fiber3DObject.lookAt).
+  Fiber3DMatrix4 get worldMatrix {
+    final rotationMatrix = Fiber3DMatrix4();
+    rotationMatrix.lookAt(position, target, up);
+
+    final q = Fiber3DQuaternion();
+    q.setFromRotationMatrix(rotationMatrix);
+
+    final world = Fiber3DMatrix4();
+    world.compose(
+      Fiber3DMutableVector3(position.x, position.y, position.z),
+      q,
+      Fiber3DMutableVector3.all(1),
+    );
+    return world;
+  }
+  
+  /// The view matrix — inverse of the camera's world transform.
+  Fiber3DMatrix4 get viewMatrix {
+    final view = worldMatrix;
+    view.invert();
+    return view;
+  }
+
+  /// Builds a world-space ray from normalized device coordinates (each
+  /// in [-1, 1]) the same setFromCamera logic three.js's Raycaster uses:
+  /// unproject a point in clip space back to world space via the inverse
+  /// projection matrix, then transform by the camera's world matrix.
+  Fiber3DRay rayFromNdc(double ndcX, double ndcY) {
+    final invProjection = projectionMatrix;
+    invProjection.invert();
+
+    final world = worldMatrix;
+
+    // Unproject a point at NDC z=0.5 (mid-frustum) back to camera space,
+    // then into world space via the camera's world matrix.
+    final camSpace = invProjection.transformPoint(ndcX, ndcY, 0.5);
+    final worldPoint = world.transformPoint(camSpace[0], camSpace[1], camSpace[2]);
+
+    final dx = worldPoint[0] - position.x;
+    final dy = worldPoint[1] - position.y;
+    final dz = worldPoint[2] - position.z;
+    final len = sqrt(dx * dx + dy * dy + dz * dz);
+
+    return Fiber3DRay(
+      origin: position,
+      direction: Fiber3DVector3(dx / len, dy / len, dz / len),
+    );
+  }
+  double _degToRad(double degrees) => degrees * pi / 180.0;
+}=== lib/src/renderer/fiber3d_tone_mapping.dart
+enum Fiber3DToneMapping {
+  /// No tone mapping (the three.js default).
+  none,
+
+  /// Exposure only.
+  linear,
+
+  reinhard,
+
+  cineon,
+
+  /// ACES filmic curve, adjusted for a brighter viewing environment.
+  acesFilmic,
+
+  /// Placeholder operator that returns the color unchanged.
+  custom,
+
+  /// AgX, Blender's default view transform.
+  agx,
+
+  neutral,
+}=== lib/src/material/fiber3d_texture.dart
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+/// A 2D image texture, decoded from raw bytes the caller supplies —
+/// asset bundle, file, network, in-memory buffer. flutter_fiber doesn't
+/// care about the source, only the bytes, per the deliberate choice not
+/// to bundle any image-loading dependency of its own.
+///
+/// Decoding uses Flutter's own built-in `dart:ui` image codec no new
+/// package dependency and is asynchronous even for already-in-memory
+/// bytes, so a texture is not immediately usable after construction.
+/// Check [isReady] (or await [ensureDecoded]) before a canvas attempts
+/// to upload/bind it.
+///
+/// Holds decoded RGBA8 pixel data and dimensions only. Actual GL texture
+/// creation/upload happens in Fiber3DCanvas once decoding completes
+/// the same lazy, cached-on-first-use pattern the canvas already applies
+/// to per-mesh GPU buffers, not duplicated here.
+class Fiber3DTexture {
+  final Uint8List sourceBytes;
+
+  Uint8List? _pixels;
+  int? _width;
+  int? _height;
+  Future<void>? _decodeFuture;
+
+  /// Set by [setPixels] when this texture's pixel data changes after
+  /// Fiber3DCanvas has already uploaded a GL texture for it a new
+  /// Lottie/text frame. Fiber3DCanvas checks this on every draw to
+  /// decide whether to re-upload rather than reuse the cached texture,
+  /// and clears it once the upload is done.
+  bool needsUpdate = false;
+
+  Fiber3DTexture(this.sourceBytes);
+
+  /// Builds a texture directly from already-decoded RGBA8 pixel data,
+  /// bypassing image-codec decoding for sources that produce raw
+  /// pixels themselves (a rendered Lottie/text frame via dart:ui's
+  /// Image.toByteData), rather than an encoded image file. [sourceBytes]
+  /// is unused on this path.
+  Fiber3DTexture.raw(Uint8List pixels, int width, int height)
+      : sourceBytes = Uint8List(0) {
+    _pixels = pixels;
+    _width = width;
+    _height = height;
+  }
+  bool get isReady => _pixels != null;
+  Uint8List? get pixels => _pixels;
+  int? get width => _width;
+  int? get height => _height;
+
+  /// Decodes [sourceBytes] into raw RGBA8 pixel data. Safe to call more
+  /// than once later calls return the same in-flight/completed future
+  /// rather than re-decoding.
+  Future<void> ensureDecoded() {
+    return _decodeFuture ??= _decode();
+  }
+
+  /// Replaces this texture's pixel data in place for live sources
+  /// (Lottie/text-in-shape) producing a new frame each tick. Width and
+  /// height may differ from the previous call. Sets [needsUpdate] so
+  /// Fiber3DCanvas re-uploads the existing GL texture on next draw
+  /// instead of leaving it stale.
+  void setPixels(Uint8List pixels, int width, int height) {
+    _pixels = pixels;
+    _width = width;
+    _height = height;
+    needsUpdate = true;
+  }
+  Future<void> _decode() async {
+    final codec = await ui.instantiateImageCodec(sourceBytes);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+
+    final byteData = await image.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
+    if (byteData == null) {
+      throw StateError('Fiber3DTexture: failed to decode image bytes');
+    }
+
+    // asUint8List() is a copy-free view over byteData's own buffer, not
+    // over the ui.Image itself, so it stays valid after image.dispose().
+    _pixels = byteData.buffer.asUint8List();
+    _width = image.width;
+    _height = image.height;
+
+    image.dispose();
+    codec.dispose();
+  }
+}=== lib/src/material/fiber3d_widget_texture.dart
+import 'dart:ui' as ui;
+
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
+
+import 'fiber3d_texture.dart';
+
+/// Captures [child] -- any Flutter widget -- off-screen, at [fps], into
+/// [texture] via Fiber3DTexture.setPixels, so live Flutter content (a
+/// Lottie animation, a video, an animated counter, anything) can be used
+/// as `Fiber3DStandardMaterial.map` on a mesh's UV face.
+///
+/// This is the general mechanism behind "Lottie-in-shape". It has no
+/// dependency on the `lottie` package or any other -- [child] can be a
+/// Lottie widget, but this class never imports `lottie`, so
+/// flutter_fiber stays free of that dependency; the caller's own app
+/// brings whichever package produces [child]. For static (non-changing)
+/// text, prefer Fiber3DTextTexture instead -- one rasterize, no
+/// per-frame capture cost.
+///
+/// Must be a direct child of a Stack (uses Positioned to keep [child]
+/// mounted -- and therefore actually painting -- without it being
+/// visible on screen; Offstage would skip painting entirely and leave
+/// nothing for RepaintBoundary.toImage() to capture).
+class Fiber3DWidgetTexture extends StatefulWidget {
+  final Widget child;
+  final Fiber3DTexture texture;
+
+  /// Render size of the off-screen widget, in logical pixels. Larger =
+  /// sharper texture, more capture cost per frame.
+  final double width;
+  final double height;
+
+  /// Capture rate, in frames per second. Independent of [child]'s own
+  /// animation rate -- this just samples whatever [child] currently
+  /// looks like, this often.
+  final double fps;
+
+  const Fiber3DWidgetTexture({
+    super.key,
+    required this.child,
+    required this.texture,
+    this.width = 256,
+    this.height = 256,
+    this.fps = 30,
+  });
+
+  @override
+  State<Fiber3DWidgetTexture> createState() => _Fiber3DWidgetTextureState();
+}
+
+class _Fiber3DWidgetTextureState extends State<Fiber3DWidgetTexture>
+    with SingleTickerProviderStateMixin {
+  final _boundaryKey = GlobalKey();
+  late final Ticker _ticker;
+  Duration _lastCapture = Duration.zero;
+  bool _capturing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker(_onTick)..start();
+  }
+
+  void _onTick(Duration elapsed) {
+    final interval = Duration(microseconds: (1e6 / widget.fps).round());
+    if (elapsed - _lastCapture < interval) return;
+    if (_capturing) return;
+
+    _lastCapture = elapsed;
+    _capturing = true;
+
+    // Deferred to after this frame's build/layout/paint -- capturing
+    // synchronously here risks reading the render tree before [child]
+    // has actually repainted for this tick.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _captureFrame().whenComplete(() => _capturing = false);
+    });
+  }
+
+  Future<void> _captureFrame() async {
+    final renderObject = _boundaryKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderRepaintBoundary) return;
+    if (renderObject.debugNeedsPaint) return;
+
+    final image = await renderObject.toImage();
+    final byteData = await image.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
+    final width = image.width;
+    final height = image.height;
+    image.dispose();
+    if (byteData == null) return;
+
+    widget.texture.setPixels(byteData.buffer.asUint8List(), width, height);
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: -100000,
+      top: -100000,
+      child: RepaintBoundary(
+        key: _boundaryKey,
+        child: SizedBox(
+          width: widget.width,
+          height: widget.height,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}=== lib/src/material/fiber3d_text_texture.dart
+import 'dart:ui' as ui;
+
+import 'package:flutter/painting.dart';
+
+import 'fiber3d_texture.dart';
+
+/// Rasterizes a string into a [Fiber3DTexture], usable directly as
+/// `Fiber3DStandardMaterial.map` (or any material's map) on any mesh —
+/// "text-in-shape" needs no new shape or shader work, only a texture.
+///
+/// Uses Flutter's own [TextPainter] plus a [ui.PictureRecorder], not a
+/// new pub dependency. The result is RGBA8 straight out of
+/// `Image.toByteData(format: rawRgba)`, same convention every other
+/// texture in the pipeline uses.
+class Fiber3DTextTexture {
+  Fiber3DTextTexture._();
+
+  /// Renders [text] once and returns a ready [Fiber3DTexture]. For text
+  /// that changes over time, call this again and feed the result into
+  /// the existing texture's [Fiber3DTexture.setPixels] rather than
+  /// swapping the material's map (which would require rebuilding the
+  /// mesh's material each change).
+  static Future<Fiber3DTexture> render({
+    required String text,
+    double fontSize = 48,
+    Color color = const Color(0xFFFFFFFF),
+    Color backgroundColor = const Color(0x00000000),
+    String? fontFamily,
+    FontWeight fontWeight = FontWeight.normal,
+    TextAlign textAlign = TextAlign.center,
+    double padding = 16,
+    double pixelRatio = 2.0,
+  }) async {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: fontSize * pixelRatio,
+          fontFamily: fontFamily,
+          fontWeight: fontWeight,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      textAlign: textAlign,
+    )..layout();
+
+    final scaledPadding = padding * pixelRatio;
+    final w = painter.width + scaledPadding * 2;
+    final h = painter.height + scaledPadding * 2;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w, h));
+
+    if (backgroundColor.alpha > 0) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, w, h),
+        Paint()..color = backgroundColor,
+      );
+    }
+    painter.paint(canvas, Offset(scaledPadding, scaledPadding));
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(w.ceil(), h.ceil());
+    final byteData = await image.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
+
+    if (byteData == null) {
+      image.dispose();
+      picture.dispose();
+      throw StateError('Fiber3DTextTexture: failed to rasterize text');
+    }
+
+    final pixels = byteData.buffer.asUint8List();
+    final width = image.width;
+    final height = image.height;
+
+    image.dispose();
+    picture.dispose();
+
+    return Fiber3DTexture.raw(pixels, width, height);
+  }
+}=== lib/src/material/fiber3d_procedural_sky.dart
+import 'dart:math';
+
+import 'fiber3d_prefiltered_cube.dart';
+
+class Fiber3DProceduralSky {
+  /// Radiance straight up (y = 1).
+  final List<double> skyColor;
+
+  /// Radiance straight down (y = -1).
+  final List<double> groundColor;
+
+  /// Radiance at the horizon (y = 0), blended between [skyColor] and
+  /// [groundColor] on either side of it.
+  final List<double> horizonColor;
+
+  /// Direction the (optional) sun points from, i.e. the direction you'd
+  /// look to see it. Normalized internally. Null disables the sun disc.
+  final List<double>? sunDirection;
+
+  /// Sun disc radiance, added on top of the sky/ground gradient.
+  final List<double> sunColor;
+
+  /// Cosine of the sun disc's angular radius. Larger (closer to 1) means
+  /// a smaller, sharper disc.
+  final double sunCosAngle;
+
+  final List<double> _sunDirNormalized;
+
+  Fiber3DProceduralSky({
+    this.skyColor = const [0.4, 0.6, 0.9],
+    this.groundColor = const [0.2, 0.2, 0.2],
+    this.horizonColor = const [0.7, 0.75, 0.8],
+    this.sunDirection = const [0.3, 0.6, 0.5],
+    this.sunColor = const [8.0, 7.5, 6.5],
+    this.sunCosAngle = 0.999,
+  }) : _sunDirNormalized = _normalized(sunDirection);
+
+  static List<double> _normalized(List<double>? v) {
+    if (v == null) return const [0.0, 1.0, 0.0];
+    final len = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    if (len <= 0) return const [0.0, 1.0, 0.0];
+    return [v[0] / len, v[1] / len, v[2] / len];
+  }
+
+  /// Smoothstep-blended two-tone gradient by [y], plus the sun disc when
+  /// [sunDirection] is set. Suitable as [Fiber3DRadianceFunction].
+  void radiance(double x, double y, double z, List<double> out) {
+    // t = 0 at horizon, 1 at zenith/nadir; smoothstep for a soft band
+    // rather than a hard seam at y = 0.
+    if (y >= 0) {
+      final t = _smoothstep(0.0, 0.35, y);
+      out[0] = _lerp(horizonColor[0], skyColor[0], t);
+      out[1] = _lerp(horizonColor[1], skyColor[1], t);
+      out[2] = _lerp(horizonColor[2], skyColor[2], t);
+    } else {
+      final t = _smoothstep(0.0, 0.35, -y);
+      out[0] = _lerp(horizonColor[0], groundColor[0], t);
+      out[1] = _lerp(horizonColor[1], groundColor[1], t);
+      out[2] = _lerp(horizonColor[2], groundColor[2], t);
+    }
+
+    if (sunDirection != null) {
+      final d = x * _sunDirNormalized[0] +
+          y * _sunDirNormalized[1] +
+          z * _sunDirNormalized[2];
+      if (d > sunCosAngle) {
+        final edge = _smoothstep(sunCosAngle, 1.0, d);
+        out[0] += sunColor[0] * edge;
+        out[1] += sunColor[1] * edge;
+        out[2] += sunColor[2] * edge;
+      }
+    }
+  }
+
+  static double _lerp(double a, double b, double t) => a + (b - a) * t;
+
+  static double _smoothstep(double edge0, double edge1, double x) {
+    final t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+  }
+}=== lib/src/material/fiber3d_checkerboard_sky.dart
+import 'dart:math';
+
+/// A high-contrast black/white checkerboard over the sphere, usable
+/// directly as a Fiber3DRadianceFunction.
+///
+/// Exists purely to make roughness-dependent environment blur visually
+/// unmistakable: a smooth gradient (like Fiber3DProceduralSky's default)
+/// barely changes when blurred, so it can't distinguish "the mip
+/// selection is broken" from "the source has nothing to blur." A
+/// checkerboard's hard edges make that distinction obvious at a glance —
+/// sharp squares at low roughness, a flat gray blur at high roughness.
+class Fiber3DCheckerboardSky {
+  /// Number of checker columns around the full longitude (2*pi).
+  final int columns;
+
+  /// Number of checker rows from pole to pole (pi).
+  final int rows;
+
+  final List<double> lightColor;
+  final List<double> darkColor;
+
+  const Fiber3DCheckerboardSky({
+    this.columns = 16,
+    this.rows = 8,
+    this.lightColor = const [1.0, 1.0, 1.0],
+    this.darkColor = const [0.02, 0.02, 0.02],
+  });
+
+  /// Suitable as Fiber3DRadianceFunction. (x, y, z) is assumed unit
+  /// length, matching every other radiance source in the pipeline.
+  void radiance(double x, double y, double z, List<double> out) {
+    // Longitude in [0, 1), latitude in [0, 1] (0 = +Y pole, 1 = -Y pole).
+    final u = atan2(z, x) / (2 * pi) + 0.5;
+    final v = acos(y.clamp(-1.0, 1.0)) / pi;
+
+    final col = (u * columns).floor();
+    final row = (v * rows).floor();
+    final light = (col + row) % 2 == 0;
+
+    final c = light ? lightColor : darkColor;
+    out[0] = c[0];
+    out[1] = c[1];
+    out[2] = c[2];
+  }
+}=== lib/src/material/fiber3d_basic_material.dart
+class Fiber3DBasicMaterial {
+  /// Color of the material, as 0xRRGGBB (matches three.js's hex convention).
+  final int color;
+
+  /// Renders the geometry as a wireframe instead of filled triangles.
+  final bool wireframe;
+
+  const Fiber3DBasicMaterial({
+    this.color = 0xffffff,
+    this.wireframe = false,
+  });
+
+  /// Red channel, normalized to [0, 1].
+  double get r => ((color >> 16) & 0xff) / 255.0;
+
+  /// Green channel, normalized to [0, 1].
+  double get g => ((color >> 8) & 0xff) / 255.0;
+
+  /// Blue channel, normalized to [0, 1].
+  double get b => (color & 0xff) / 255.0;
+}=== lib/src/material/fiber3d_lambert_material.dart
+/// A non-physically-based material for non-shiny surfaces (three.js's
+/// MeshLambertMaterial equivalent): pure Lambertian diffuse response, no
+/// specular highlight at all. Cheaper to shade than
+/// [Fiber3DStandardMaterial] and appropriate when a matte look is
+/// actually wanted, not just an approximation of one.
+class Fiber3DLambertMaterial {
+  /// Base color of the material, as 0xRRGGBB.
+  final int color;
+
+  /// Emissive (self-lit, glow) color, as 0xRRGGBB. Unaffected by lighting.
+  final int emissive;
+
+  /// Intensity multiplier applied to the emissive color.
+  final double emissiveIntensity;
+
+  /// Renders the geometry as a wireframe instead of filled triangles.
+  final bool wireframe;
+
+  /// Whether the material is rendered with flat (faceted) shading instead
+  /// of smooth per-vertex-normal shading.
+  final bool flatShading;
+
+  const Fiber3DLambertMaterial({
+    this.color = 0xffffff,
+    this.emissive = 0x000000,
+    this.emissiveIntensity = 1.0,
+    this.wireframe = false,
+    this.flatShading = false,
+  });
+
+  double get r => ((color >> 16) & 0xff) / 255.0;
+  double get g => ((color >> 8) & 0xff) / 255.0;
+  double get b => (color & 0xff) / 255.0;
+
+  double get emissiveR => ((emissive >> 16) & 0xff) / 255.0;
+  double get emissiveG => ((emissive >> 8) & 0xff) / 255.0;
+  double get emissiveB => (emissive & 0xff) / 255.0;
+}=== lib/src/material/fiber3d_phong_material.dart
+/// A non-physically-based material with a classic Blinn-Phong specular
+/// highlight (three.js's MeshPhongMaterial equivalent): Lambertian
+/// diffuse plus a tunable specular highlight controlled by `specular`
+/// color and `shininess`, rather than the roughness/metalness model
+/// [Fiber3DStandardMaterial] uses.
+class Fiber3DPhongMaterial {
+  /// Base color of the material, as 0xRRGGBB.
+  final int color;
+
+  /// Emissive (self-lit, glow) color, as 0xRRGGBB. Unaffected by lighting.
+  final int emissive;
+
+  /// Intensity multiplier applied to the emissive color.
+  final double emissiveIntensity;
+
+  /// Color of the specular highlight, as 0xRRGGBB.
+  final int specular;
+
+  /// Controls the tightness/size of the specular highlight — higher
+  /// values give a smaller, sharper highlight (a "shinier" look).
+  final double shininess;
+
+  /// Renders the geometry as a wireframe instead of filled triangles.
+  final bool wireframe;
+
+  /// Whether the material is rendered with flat (faceted) shading instead
+  /// of smooth per-vertex-normal shading.
+  final bool flatShading;
+
+  const Fiber3DPhongMaterial({
+    this.color = 0xffffff,
+    this.emissive = 0x000000,
+    this.emissiveIntensity = 1.0,
+    this.specular = 0x111111,
+    this.shininess = 30.0,
+    this.wireframe = false,
+    this.flatShading = false,
+  });
+
+  double get r => ((color >> 16) & 0xff) / 255.0;
+  double get g => ((color >> 8) & 0xff) / 255.0;
+  double get b => (color & 0xff) / 255.0;
+
+  double get emissiveR => ((emissive >> 16) & 0xff) / 255.0;
+  double get emissiveG => ((emissive >> 8) & 0xff) / 255.0;
+  double get emissiveB => (emissive & 0xff) / 255.0;
+
+  double get specularR => ((specular >> 16) & 0xff) / 255.0;
+  double get specularG => ((specular >> 8) & 0xff) / 255.0;
+  double get specularB => (specular & 0xff) / 255.0;
+}=== lib/src/material/fiber3d_toon_material.dart
+/// A cel-shaded (toon) material (three.js's MeshToonMaterial equivalent):
+/// direct light is stepped into discrete bands rather than shaded
+/// continuously, giving the classic flat cartoon look. No specular term
+/// at all matching three.js's own MeshToonMaterial, which dropped
+/// shininess/specular entirely (unlike Lambert, which at least keeps a
+/// specularStrength field even with nothing feeding it yet).
+class Fiber3DToonMaterial {
+  /// Base color of the material, as 0xRRGGBB.
+  final int color;
+
+  /// Emissive (self-lit, glow) color, as 0xRRGGBB. Unaffected by lighting.
+  final int emissive;
+
+  /// Intensity multiplier applied to the emissive color.
+  final double emissiveIntensity;
+
+  /// Renders the geometry as a wireframe instead of filled triangles.
+  final bool wireframe;
+
+  /// Whether the material is rendered with flat (faceted) shading instead
+  /// of smooth per-vertex-normal shading.
+  final bool flatShading;
+
+  const Fiber3DToonMaterial({
+    this.color = 0xffffff,
+    this.emissive = 0x000000,
+    this.emissiveIntensity = 1.0,
+    this.wireframe = false,
+    this.flatShading = false,
+  });
+
+  double get r => ((color >> 16) & 0xff) / 255.0;
+  double get g => ((color >> 8) & 0xff) / 255.0;
+  double get b => (color & 0xff) / 255.0;
+
+  double get emissiveR => ((emissive >> 16) & 0xff) / 255.0;
+  double get emissiveG => ((emissive >> 8) & 0xff) / 255.0;
+  double get emissiveB => (emissive & 0xff) / 255.0;
+}=== lib/src/material/fiber3d_matcap_material.dart
+class Fiber3DMatcapMaterial {
+  /// Base color of the material, as 0xRRGGBB.
+  final int color;
+
+  /// Renders the geometry as a wireframe instead of filled triangles.
+  final bool wireframe;
+
+  /// Whether the material is rendered with flat (faceted) shading instead
+  /// of smooth per-vertex-normal shading.
+  final bool flatShading;
+
+  const Fiber3DMatcapMaterial({
+    this.color = 0xffffff,
+    this.wireframe = false,
+    this.flatShading = false,
+  });
+
+  double get r => ((color >> 16) & 0xff) / 255.0;
+  double get g => ((color >> 8) & 0xff) / 255.0;
+  double get b => (color & 0xff) / 255.0;
+}=== lib/src/light/fiber3d_ambient_light.dart
+/// light that globally illuminates all objects in the scene equally.
+///
+/// It cannot cast shadows or shading gradients, since it has no direction
+/// or position it's a flat, uniform contribution added to every surface.
+///
+class Fiber3DAmbientLight {
+  /// The light's color, as 0xRRGGBB.
+  final int color;
+
+  /// The light's strength/intensity.
+  final double intensity;
+
+  const Fiber3DAmbientLight({
+    this.color = 0xffffff,
+    this.intensity = 1.0,
+  });
+
+  double get r => ((color >> 16) & 0xff) / 255.0;
+  double get g => ((color >> 8) & 0xff) / 255.0;
+  double get b => (color & 0xff) / 255.0;
+}=== lib/src/light/fiber3d_point_light.dart
+import 'dart:math';
+import '../core/fiber3d_vector3.dart';
+
+/// A light that emits from a single point in all directions, replicating
+/// a bare lightbulb.
+///
+/// Ported from three.js's `PointLight`, with shadow support dropped
+/// entirely shadow mapping is explicitly out of scope for flutter_fiber
+/// v1 (deferred to v2+ per the PRD's non-goals).
+class Fiber3DPointLight {
+  /// The light's color, as 0xRRGGBB.
+  final int color;
+
+  /// The light's strength/intensity, measured in candela (cd).
+  final double intensity;
+
+  /// Maximum range of the light. 0 means no limit (inverse-square falloff
+  /// to infinity).
+  final double distance;
+
+  /// How much the light dims over distance. For physically-correct
+  /// rendering this should stay at its default.
+  final double decay;
+
+  /// World-space position of the light.
+  final Fiber3DVector3 position;
+
+  const Fiber3DPointLight({
+    this.color = 0xffffff,
+    this.intensity = 1.0,
+    this.distance = 0,
+    this.decay = 2,
+    this.position = const Fiber3DVector3.zero(),
+  });
+
+  /// Luminous power in lumens, derived from intensity (candela) for an
+  /// isotropic point source: power = 4π × intensity.
+  double get power => intensity * 4 * pi;
+
+  double get r => ((color >> 16) & 0xff) / 255.0;
+  double get g => ((color >> 8) & 0xff) / 255.0;
+  double get b => (color & 0xff) / 255.0;
+}=== lib/src/light/fiber3d_hemisphere_light.dart
+import '../core/fiber3d_vector3.dart';
+
+/// A light that blends between a sky color and a ground color depending
+/// on a surface normal's alignment with [direction] no position, no
+/// falloff, no shadows a soft ambient-like fill that at least varies
+/// with orientation, unlike Fiber3DAmbientLight's flat contribution.
+///
+/// Ported from three.js's `HemisphereLight`. Three.js derives its
+/// light's direction from a world-space position (defaulting to
+/// straight up); flutter_fiber has no lights-in-the-scene-graph
+/// plumbing to make that meaningful yet, so [direction] is taken
+/// directly rather than derived from a position, matching the shader
+/// struct's own `direction` field exactly (see
+/// fiber3d_lights_pars_begin.dart's HemisphereLight/
+/// getHemisphereLightIrradiance).
+class Fiber3DHemisphereLight {
+  /// Color blended in on surfaces facing toward [direction].
+  final int skyColor;
+
+  /// Color blended in on surfaces facing away from [direction].
+  final int groundColor;
+
+  /// The light's strength/intensity.
+  final double intensity;
+
+  /// World-space direction surfaces are compared against. Does not need
+  /// to be normalized the shader normal it's dotted against already
+  /// is, but the blend weight is a raw dot product, so an unnormalized
+  /// direction would scale the sky/ground blend unevenly; normalize
+  /// this yourself if you're not passing a unit vector.
+  final Fiber3DVector3 direction;
+
+  const Fiber3DHemisphereLight({
+    this.skyColor = 0xffffff,
+    this.groundColor = 0x444444,
+    this.intensity = 1.0,
+    this.direction = const Fiber3DVector3(0, 1, 0),
+  });
+
+  double get skyR => ((skyColor >> 16) & 0xff) / 255.0;
+  double get skyG => ((skyColor >> 8) & 0xff) / 255.0;
+  double get skyB => (skyColor & 0xff) / 255.0;
+
+  double get groundR => ((groundColor >> 16) & 0xff) / 255.0;
+  double get groundG => ((groundColor >> 8) & 0xff) / 255.0;
+  double get groundB => (groundColor & 0xff) / 255.0;
+}=== lib/src/loader/gltf/fiber3d_gltf_model.dart
+import 'package:flutter/widgets.dart';
+
+import '../../core/fiber3d_group.dart';
+import '../../core/fiber3d_mesh.dart';
+import 'fiber3d_gltf_scene.dart';
+
+class Fiber3DGltfModel extends StatelessWidget {
+  final Fiber3DGltfScene scene;
+
+  /// Uniform scale applied to the whole model. glTF exporters disagree
+  /// on real-world units (meters vs. centimeters is a common mismatch),
+  /// so a loaded model can easily come in 10-100x smaller or larger than
+  /// expected relative to your scene/camera -- this is the knob to fix
+  /// that without touching the source file.
+  final double scale;
+
+  const Fiber3DGltfModel({super.key, required this.scene, this.scale = 1.0});
+
+  @override
+  Widget build(BuildContext context) {
+    return Fiber3DGroup(
+      onFrame: (elapsed, delta, transform) {
+        transform.scale.set(scale, scale, scale);
+      },
+      children: scene.rootNodes.map(_buildNode).toList(),
+    );
+  }
+
+  static Widget _buildNode(Fiber3DGltfNode node) {
+    return Fiber3DGroup(
+      onFrame: (elapsed, delta, transform) {
+        transform.position.set(node.posX, node.posY, node.posZ);
+        transform.rotation.x = node.rotX;
+        transform.rotation.y = node.rotY;
+        transform.rotation.z = node.rotZ;
+        transform.scale.set(node.scaleX, node.scaleY, node.scaleZ);
+      },
+      children: [
+        for (final primitive in node.primitives)
+          Fiber3DMesh(
+            geometry: primitive,
+            material: primitive.material,
+            showEdges: false,
+            onFrame: (elapsed, delta, transform) {},
+          ),
+        for (final child in node.children) _buildNode(child),
+      ],
+    );
+  }
+}=== lib/src/loader/gltf/fiber3d_gltf_scene.dart
+import '../../material/fiber3d_standard_material.dart';
+
+/// One glTF mesh primitive, decoded into exactly the shape
+/// Fiber3DCanvas's existing geometry pipeline already expects
+/// (positions/normals/uvs/colors/indices) — this can be passed directly
+/// as a Fiber3DMesh's `geometry`, no wrapper needed. The "Fiber3D" name
+/// prefix matters: the canvas's type check is
+/// `geometry.runtimeType.toString().startsWith('Fiber3D')`.
+class Fiber3DGltfPrimitive {
+  final List<double> positions;
+  final List<double> normals;
+  final List<double> uvs;
+  final List<double>? colors;
+  final List<int> indices;
+  final Fiber3DStandardMaterial material;
+
+  const Fiber3DGltfPrimitive({
+    required this.positions,
+    required this.normals,
+    required this.uvs,
+    this.colors,
+    required this.indices,
+    required this.material,
+  });
+}
+
+/// One glTF node: its own local transform (already resolved to
+/// position + Euler rotation + scale, regardless of whether the source
+/// node used translation/rotation/scale or a single matrix), the mesh
+/// primitives it owns (if any), and its children.
+class Fiber3DGltfNode {
+  final String? name;
+  final double posX, posY, posZ;
+  final double rotX, rotY, rotZ;
+  final double scaleX, scaleY, scaleZ;
+  final List<Fiber3DGltfPrimitive> primitives;
+  final List<Fiber3DGltfNode> children = [];
+
+  Fiber3DGltfNode({
+    this.name,
+    this.posX = 0,
+    this.posY = 0,
+    this.posZ = 0,
+    this.rotX = 0,
+    this.rotY = 0,
+    this.rotZ = 0,
+    this.scaleX = 1,
+    this.scaleY = 1,
+    this.scaleZ = 1,
+    this.primitives = const [],
+  });
+}
+
+/// The fully parsed result of loading a glTF/glb file: its root nodes
+/// (per the file's default, or explicitly selected, scene).
+class Fiber3DGltfScene {
+  final List<Fiber3DGltfNode> rootNodes;
+  const Fiber3DGltfScene(this.rootNodes);
+}=== lib/src/geometry/fiber3d_arrow.dart
+import 'package:flutter/widgets.dart';
+import '../core/fiber3d_group.dart';
+import '../core/fiber3d_mesh.dart';
+import '../core/fiber3d_vector3.dart';
+import 'fiber3d_cylinder.dart';
+import 'fiber3d_cone.dart';
+import '../material/fiber3d_standard_material.dart';
+
+/// A pre-composed arrow: a cylindrical shaft with a conical head, packaged
+/// as a single reusable widget instead of requiring the caller to
+/// manually group a Cylinder + Cone every time (as done ad hoc in the
+/// toy train demo). Points along +Y by default, base at the origin,
+/// tip at `length`.
+///
+/// Not a standalone geometry class  it's a thin Fiber3DGroup wrapper,
+/// since a shaft+head arrow is two independently-shaped parts, not one
+/// continuous surface.
+class Fiber3DArrow extends StatelessWidget {
+  /// Total length from the shaft's base to the head's tip.
+  final double length;
+
+  /// Fraction of `length` occupied by the head (cone). The rest is
+  /// the shaft (cylinder).
+  final double headLengthRatio;
+
+  /// Shaft radius, as a fraction of the head's base radius controls
+  /// how much thinner the shaft looks compared to the arrowhead.
+  final double shaftRadiusRatio;
+
+  /// Head base radius, in absolute units.
+  final double headRadius;
+
+  final int radialSegments;
+  final Fiber3DStandardMaterial? shaftMaterial;
+  final Fiber3DStandardMaterial? headMaterial;
+
+  const Fiber3DArrow({
+    super.key,
+    this.length = 2.0,
+    this.headLengthRatio = 0.25,
+    this.shaftRadiusRatio = 0.35,
+    this.headRadius = 0.2,
+    this.radialSegments = 16,
+    this.shaftMaterial,
+    this.headMaterial,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final headLength = length * headLengthRatio;
+    final shaftLength = length - headLength;
+    final shaftRadius = headRadius * shaftRadiusRatio;
+
+    final defaultMaterial =  Fiber3DStandardMaterial(
+      color: 0x999999,
+      roughness: 0.5,
+      metalness: 0.2,
+    );
+
+    return Fiber3DGroup(
+      children: [
+        _ArrowPart(
+          geometry: Fiber3DCylinder(
+            radiusTop: shaftRadius,
+            radiusBottom: shaftRadius,
+            height: shaftLength,
+            radialSegments: radialSegments,
+          ),
+          material: shaftMaterial ?? defaultMaterial,
+          // Shaft's own center sits at half its length from the base.
+          position: Fiber3DVector3(0, shaftLength / 2, 0),
+        ),
+        _ArrowPart(
+          geometry: Fiber3DCone(
+            radius: headRadius,
+            height: headLength,
+            radialSegments: radialSegments,
+          ),
+          material: headMaterial ?? defaultMaterial,
+          // Head sits on top of the shaft; its own center is half its
+          // height above the shaft's top.
+          position: Fiber3DVector3(0, shaftLength + headLength / 2, 0),
+        ),
+      ],
+    );
+  }
+}
+
+/// Internal helper: a mesh that sets its own fixed local position once,
+/// same pattern used for the joint spheres in the earlier limb/group
+/// demos (Fiber3DMesh has no `position:` constructor param).
+class _ArrowPart extends StatefulWidget {
+  final dynamic geometry;
+  final Fiber3DStandardMaterial material;
+  final Fiber3DVector3 position;
+
+  const _ArrowPart({
+    required this.geometry,
+    required this.material,
+    required this.position,
+  });
+
+  @override
+  State<_ArrowPart> createState() => _ArrowPartState();
+}
+
+class _ArrowPartState extends State<_ArrowPart> {
+  bool _placed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Fiber3DMesh(
+      geometry: widget.geometry,
+      material: widget.material,
+      onFrame: (elapsed, delta, transform) {
+        if (!_placed) {
+          transform.position.set(
+              widget.position.x, widget.position.y, widget.position.z);
+          _placed = true;
+        }
+      },
+    );
+  }
+}=== lib/src/geometry/fiber3d_box.dart
+/// A geometry class for a rectangular cuboid with a given width, height,
+/// and depth. On creation, the cuboid is centred on the origin, with each
+/// edge parallel to one of the axes.
+///
+/// Ported from three.js's `BoxGeometry` (src/geometries/BoxGeometry.js).
+/// Multi-material face groups are intentionally omitted — flutter_fiber's
+class Fiber3DBox {
+  final double width;
+  final double height;
+  final double depth;
+  final int widthSegments;
+  final int heightSegments;
+  final int depthSegments;
+
+  /// Flat list of vertex positions, 3 floats (x, y, z) per vertex.
+  final List<double> positions = [];
+
+  /// Flat list of vertex normals, 3 floats (x, y, z) per vertex.
+  final List<double> normals = [];
+
+  /// Flat list of vertex UVs, 2 floats (u, v) per vertex.
+  final List<double> uvs = [];
+
+  List<double>? colors;
+
+  /// Triangle indices into the position/normal/uv buffers.
+  final List<int> indices = [];
+
+
+  int _numberOfVertices = 0;
+
+  Fiber3DBox({
+    this.width = 1,
+    this.height = 1,
+    this.depth = 1,
+    this.widthSegments = 1,
+    this.heightSegments = 1,
+    this.depthSegments = 1,
+  }) {
+    // Axis indices: 0 = x, 1 = y, 2 = z — mirrors three.js's 'x'/'y'/'z'
+    // string component lookup (vector[u], vector[v], vector[w]).
+    // Face order and parameters match three.js exactly: px, nx, py, ny, pz, nz
+    _buildPlane(2, 1, 0, -1, -1, depth, height, width, depthSegments, heightSegments); // px
+    _buildPlane(2, 1, 0, 1, -1, depth, height, -width, depthSegments, heightSegments); // nx
+    _buildPlane(0, 2, 1, 1, 1, width, depth, height, widthSegments, depthSegments); // py
+    _buildPlane(0, 2, 1, 1, -1, width, depth, -height, widthSegments, depthSegments); // ny
+    _buildPlane(0, 1, 2, 1, -1, width, height, depth, widthSegments, heightSegments); // pz
+    _buildPlane(0, 1, 2, -1, -1, width, height, -depth, widthSegments, heightSegments); // nz
+  }
+
+  void _buildPlane(
+    int u,
+    int v,
+    int w,
+    double uDir,
+    double vDir,
+    double planeWidth,
+    double planeHeight,
+    double planeDepth,
+    int gridX,
+    int gridY,
+  ) {
+    final segmentWidth = planeWidth / gridX;
+    final segmentHeight = planeHeight / gridY;
+
+    final widthHalf = planeWidth / 2;
+    final heightHalf = planeHeight / 2;
+    final depthHalf = planeDepth / 2;
+
+    final gridX1 = gridX + 1;
+=== lib/src/geometry/fiber3d_capsule.dart
+import 'dart:math';
+
+/// A geometry class for representing a capsule.
+///
+/// Ported from three.js's `CapsuleGeometry` (src/geometries/CapsuleGeometry.js).
+class Fiber3DCapsule {
+  final double radius;
+  final double height;
+  final int capSegments;
+  final int radialSegments;
+  final int heightSegments;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+
+  List<double>? colors;
+
+  final List<int> indices = [];
+
+  Fiber3DCapsule({
+    this.radius = 1,
+    double height = 1,
+    int capSegments = 4,
+    int radialSegments = 8,
+    int heightSegments = 1,
+  })  : height = max(0, height),
+        capSegments = max(1, capSegments.floor()),
+        radialSegments = max(3, radialSegments.floor()),
+        heightSegments = max(1, heightSegments.floor()) {
+    _build();
+  }
+
+  void _build() {
+    final halfHeight = height / 2;
+    final capArcLength = (pi / 2) * radius;
+    final cylinderPartLength = height;
+    final totalArcLength = 2 * capArcLength + cylinderPartLength;
+
+    final numVerticalSegments = capSegments * 2 + heightSegments;
+    final verticesPerRow = radialSegments + 1;
+
+    for (var iy = 0; iy <= numVerticalSegments; iy++) {
+      double currentArcLength = 0;
+      double profileY = 0;
+      double profileRadius = 0;
+      double normalYComponent = 0;
+
+      if (iy <= capSegments) {
+        // bottom cap
+        final segmentProgress = iy / capSegments;
+        final angle = (segmentProgress * pi) / 2;
+        profileY = -halfHeight - radius * cos(angle);
+        profileRadius = radius * sin(angle);
+        normalYComponent = -radius * cos(angle);
+        currentArcLength = segmentProgress * capArcLength;
+      } else if (iy <= capSegments + heightSegments) {
+        // middle section
+        final segmentProgress = (iy - capSegments) / heightSegments;
+        profileY = -halfHeight + segmentProgress * height;
+        profileRadius = radius;
+        normalYComponent = 0;
+        currentArcLength = capArcLength + segmentProgress * cylinderPartLength;
+      } else {
+        // top cap
+        final segmentProgress =
+            (iy - capSegments - heightSegments) / capSegments;
+        final angle = (segmentProgress * pi) / 2;
+        profileY = halfHeight + radius * sin(angle);
+        profileRadius = radius * cos(angle);
+=== lib/src/geometry/fiber3d_chamfered_box.dart
+import 'dart:math';
+
+/// A box with rounded/chamfered edges and corners, using a superellipsoid
+/// blend: start from a normal subdivided box grid, then pull each vertex
+/// toward a rounded corner shape based on how close it is to an edge or
+/// corner. `chamferAmount` (0 = sharp box, close to 1 = fully rounded,
+/// like a sphere-ish blob) controls the strength of the effect.
+///
+/// Original to flutter_fiber no three.js equivalent. This is a
+/// simplified rounding technique, not a true constant-radius edge
+/// fillet it gives a convincing chamfered look without the
+/// complexity of generating and stitching separate fillet surfaces.
+class Fiber3DChamferedBox {
+  final double width;
+  final double height;
+  final double depth;
+  final double chamferAmount;
+  final int segments;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  Fiber3DChamferedBox({
+    this.width = 1,
+    this.height = 1,
+    this.depth = 1,
+    double chamferAmount = 0.2,
+    int segments = 8,
+  }) : chamferAmount = chamferAmount.clamp(0.0, 0.95),
+       segments = max(2, segments) {
+    _build();
+  }
+
+  void _build() {
+    // Build each of the 6 faces as a subdivided grid, matching
+    // Fiber3DBox's own construction pattern (axis-swap + direction
+    // arguments per face), then apply the corner-rounding pass to
+    // every vertex afterward.
+    _buildFace(2, 1, 0, -1, -1, depth, height, width); // px
+    _buildFace(2, 1, 0, 1, -1, depth, height, -width); // nx
+    _buildFace(0, 2, 1, 1, 1, width, depth, height); // py
+    _buildFace(0, 2, 1, 1, -1, width, depth, -height); // ny
+    _buildFace(0, 1, 2, 1, -1, width, height, depth); // pz
+    _buildFace(0, 1, 2, -1, -1, width, height, -depth); // nz
+
+    _applyRounding();
+  }
+
+  void _buildFace(
+    int u,
+    int v,
+    int w,
+    double uDir,
+    double vDir,
+    double planeWidth,
+    double planeHeight,
+    double planeDepth,
+  ) {
+    final segmentWidth = planeWidth / segments;
+    final segmentHeight = planeHeight / segments;
+    final widthHalf = planeWidth / 2;
+    final heightHalf = planeHeight / 2;
+    final depthHalf = planeDepth / 2;
+
+    final base = positions.length ~/ 3;
+
+    for (var iy = 0; iy <= segments; iy++) {
+=== lib/src/geometry/fiber3d_circle.dart
+import 'dart:math';
+
+/// A flat disc built from triangular segments radiating from a center
+/// point, going counter clockwise from a start angle.
+///
+/// (src/geometries/CircleGeometry.js).
+class Fiber3DCircle {
+  final double radius;
+  final int segments;
+  final double thetaStart;
+  final double thetaLength;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+
+  final List<int> indices = [];
+
+
+  Fiber3DCircle({
+    this.radius = 1,
+    int segments = 32,
+    this.thetaStart = 0,
+    this.thetaLength = pi * 2,
+  }) : segments = max(3, segments) {
+    _build();
+  }
+
+  void _build() {
+    // Center point.
+    positions.addAll([0, 0, 0]);
+    normals.addAll([0, 0, 1]);
+    uvs.addAll([0.5, 0.5]);
+
+    for (var s = 0; s <= segments; s++) {
+      final segment = thetaStart + s / segments * thetaLength;
+
+      final vx = radius * cos(segment);
+      final vy = radius * sin(segment);
+      const vz = 0.0;
+
+      positions.addAll([vx, vy, vz]);
+      normals.addAll([0, 0, 1]);
+
+      final u = (vx / radius + 1) / 2;
+      final v = (vy / radius + 1) / 2;
+      uvs.addAll([u, v]);
+    }
+
+    for (var i = 1; i <= segments; i++) {
+      indices.addAll([i, i + 1, 0]);
+    }
+  }
+}
+=== lib/src/geometry/fiber3d_cone.dart
+import 'fiber3d_cylinder.dart';
+
+/// A geometry class for representing a cone.
+///
+/// Ported from three.js's `ConeGeometry` (src/geometries/ConeGeometry.js),
+/// which is itself a thin subclass of `CylinderGeometry` with
+/// `radiusTop` fixed at 0. Mirrors that inheritance relationship
+/// directly a cone is just a cylinder whose top radius is zero.
+class Fiber3DCone extends Fiber3DCylinder {
+  Fiber3DCone({
+    double radius = 1,
+    double height = 1,
+    int radialSegments = 32,
+    int heightSegments = 1,
+    bool openEnded = false,
+    double thetaStart = 0,
+    double thetaLength = 2 * 3.141592653589793,
+  }) : super(
+          radiusTop: 0,
+          radiusBottom: radius,
+          height: height,
+          radialSegments: radialSegments,
+          heightSegments: heightSegments,
+          openEnded: openEnded,
+          thetaStart: thetaStart,
+          thetaLength: thetaLength,
+        );
+}=== lib/src/geometry/fiber3d_cylinder.dart
+import 'dart:math';
+
+class Fiber3DCylinder {
+  final double radiusTop;
+  final double radiusBottom;
+  final double height;
+  final int radialSegments;
+  final int heightSegments;
+  final bool openEnded;
+  final double thetaStart;
+  final double thetaLength;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  int _index = 0;
+  late final double _halfHeight;
+
+  Fiber3DCylinder({
+    this.radiusTop = 1,
+    this.radiusBottom = 1,
+    this.height = 1,
+    this.radialSegments = 32,
+    this.heightSegments = 1,
+    this.openEnded = false,
+    this.thetaStart = 0,
+    this.thetaLength = pi * 2,
+  }) {
+    _halfHeight = height / 2;
+    _generateTorso();
+
+    if (!openEnded) {
+      if (radiusTop > 0) _generateCap(true);
+      if (radiusBottom > 0) _generateCap(false);
+    }
+  }
+
+  void _generateTorso() {
+    final indexArray = <List<int>>[];
+
+    // Used to calculate the normal's slope component.
+    final slope = (radiusBottom - radiusTop) / height;
+
+    for (var y = 0; y <= heightSegments; y++) {
+      final indexRow = <int>[];
+
+      final v = y / heightSegments;
+      final radius = v * (radiusBottom - radiusTop) + radiusTop;
+
+      for (var x = 0; x <= radialSegments; x++) {
+        final u = x / radialSegments;
+        final theta = u * thetaLength + thetaStart;
+
+        final sinTheta = sin(theta);
+        final cosTheta = cos(theta);
+
+        final vx = radius * sinTheta;
+        final vy = -v * height + _halfHeight;
+        final vz = radius * cosTheta;
+        positions.addAll([vx, vy, vz]);
+
+        // Normal = normalize(sinTheta, slope, cosTheta)
+        final len = sqrt(
+          sinTheta * sinTheta + slope * slope + cosTheta * cosTheta,
+        );
+        normals.addAll([sinTheta / len, slope / len, cosTheta / len]);
+
+=== lib/src/geometry/fiber3d_dodecahedron.dart
+import 'dart:math';
+import 'fiber3d_polyhedron.dart';
+
+/// A geometry class for representing a dodecahedron.
+///
+/// Ported from three.js's `DodecahedronGeometry`
+/// (src/geometries/DodecahedronGeometry.js), a thin subclass of
+/// `Fiber3DPolyhedron` supplying the dodecahedron's raw vertex/face data.
+class Fiber3DDodecahedron extends Fiber3DPolyhedron {
+  Fiber3DDodecahedron({double radius = 1, int detail = 0})
+      : super(_vertices(), _indices, radius: radius, detail: detail);
+
+  static List<double> _vertices() {
+    final t = (1 + sqrt(5)) / 2;
+    final r = 1 / t;
+
+    return [
+      // (±1, ±1, ±1)
+      -1, -1, -1, -1, -1, 1,
+      -1, 1, -1, -1, 1, 1,
+      1, -1, -1, 1, -1, 1,
+      1, 1, -1, 1, 1, 1,
+
+      // (0, ±1/φ, ±φ)
+      0, -r, -t, 0, -r, t,
+      0, r, -t, 0, r, t,
+
+      // (±1/φ, ±φ, 0)
+      -r, -t, 0, -r, t, 0,
+      r, -t, 0, r, t, 0,
+
+      // (±φ, 0, ±1/φ)
+      -t, 0, -r, t, 0, -r,
+      -t, 0, r, t, 0, r,
+    ];
+  }
+
+  static const List<int> _indices = [
+    3, 11, 7, 3, 7, 15, 3, 15, 13,
+    7, 19, 17, 7, 17, 6, 7, 6, 15,
+    17, 4, 8, 17, 8, 10, 17, 10, 6,
+    8, 0, 16, 8, 16, 2, 8, 2, 10,
+    0, 12, 1, 0, 1, 18, 0, 18, 16,
+    6, 10, 2, 6, 2, 13, 6, 13, 15,
+    2, 16, 18, 2, 18, 3, 2, 3, 13,
+    18, 1, 9, 18, 9, 11, 18, 11, 3,
+    4, 14, 12, 4, 12, 0, 4, 0, 8,
+    11, 9, 5, 11, 5, 19, 11, 19, 7,
+    19, 5, 14, 19, 14, 4, 19, 4, 17,
+    1, 12, 14, 1, 14, 5, 1, 5, 9,
+  ];
+}=== lib/src/geometry/fiber3d_icosahedron.dart
+import 'dart:math';
+import 'fiber3d_polyhedron.dart';
+
+/// A geometry class for representing an icosahedron.
+///
+/// Ported from three.js's `IcosahedronGeometry`
+/// (src/geometries/IcosahedronGeometry.js), a thin subclass of
+/// `Fiber3DPolyhedron` supplying the icosahedron's raw vertex/face data.
+class Fiber3DIcosahedron extends Fiber3DPolyhedron {
+  Fiber3DIcosahedron({double radius = 1, int detail = 0})
+      : super(_vertices(), _indices, radius: radius, detail: detail);
+
+  static List<double> _vertices() {
+    final t = (1 + sqrt(5)) / 2;
+    return [
+      -1, t, 0, 1, t, 0, -1, -t, 0, 1, -t, 0,
+      0, -1, t, 0, 1, t, 0, -1, -t, 0, 1, -t,
+      t, 0, -1, t, 0, 1, -t, 0, -1, -t, 0, 1,
+    ];
+  }
+
+  static const List<int> _indices = [
+    0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11,
+    1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
+    3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9,
+    4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1,
+  ];
+}=== lib/src/geometry/fiber3d_lathe.dart
+import 'dart:math';
+
+/// Creates meshes with axial symmetry, like vases or bowls, by revolving
+/// a 2D profile (an array of [x, y] points) around the Y axis.
+///
+/// Ported from three.js's `LatheGeometry`
+/// (src/geometries/LatheGeometry.js). Each point's x-coordinate should
+/// be greater than zero (it becomes the radius at that height).
+class Fiber3DLathe {
+  /// Profile points as [x, y] pairs x is distance from the Y axis,
+  /// y is height. Matches three.js's default profile if none is given
+  /// (a simple lens/almond shape).
+  final List<List<double>> points;
+  final int segments;
+  final double phiStart;
+  final double phiLength;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  Fiber3DLathe({
+    List<List<double>>? points,
+    int segments = 12,
+    this.phiStart = 0,
+    double phiLength = pi * 2,
+  }) : points =
+           points ??
+           [
+             [0, -0.5],
+             [0.5, 0],
+             [0, 0.5],
+           ],
+       segments = segments.floor(),
+       phiLength = phiLength.clamp(0, pi * 2) {
+    _build();
+  }
+
+  void _build() {
+    final inverseSegments = 1.0 / segments;
+
+    // Pre-compute normals for the initial "meridian" (the flat 2D
+    // profile before revolving), by averaging each edge's perpendicular
+    // direction with the previous one — same edge-miter approach the
+    // source uses.
+    final initNormals = <double>[];
+    var prevNx = 0.0, prevNy = 0.0, prevNz = 0.0;
+
+    for (var j = 0; j <= points.length - 1; j++) {
+      if (j == 0) {
+        // Special handling for the first vertex on the path.
+        final dx = points[j + 1][0] - points[j][0];
+        final dy = points[j + 1][1] - points[j][1];
+
+        var nx = dy * 1.0;
+        var ny = -dx;
+        const nz = 0.0;
+
+        prevNx = nx;
+        prevNy = ny;
+        prevNz = nz;
+
+        final len = sqrt(nx * nx + ny * ny + nz * nz);
+        if (len > 0) {
+          nx /= len;
+          ny /= len;
+        }
+        initNormals.addAll([nx, ny, 0.0]);
+=== lib/src/geometry/fiber3d_octahedron.dart
+import 'fiber3d_polyhedron.dart';
+
+/// A geometry class for representing an octahedron.
+///
+/// Ported from three.js's `OctahedronGeometry`
+/// (src/geometries/OctahedronGeometry.js), a thin subclass of
+/// `Fiber3DPolyhedron` supplying the octahedron's raw vertex/face data.
+class Fiber3DOctahedron extends Fiber3DPolyhedron {
+  Fiber3DOctahedron({double radius = 1, int detail = 0})
+      : super(_vertices, _indices, radius: radius, detail: detail);
+
+  static const List<double> _vertices = [
+    1, 0, 0, -1, 0, 0, 0, 1, 0,
+    0, -1, 0, 0, 0, 1, 0, 0, -1,
+  ];
+
+  static const List<int> _indices = [
+    0, 2, 4, 0, 4, 3, 0, 3, 5,
+    0, 5, 2, 1, 2, 5, 1, 5, 3,
+    1, 3, 4, 1, 4, 2,
+  ];
+}=== lib/src/geometry/fiber3d_plane.dart
+class Fiber3DPlane {
+  final double width;
+  final double height;
+  final int widthSegments;
+  final int heightSegments;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  Fiber3DPlane({
+    this.width = 1,
+    this.height = 1,
+    this.widthSegments = 1,
+    this.heightSegments = 1,
+  }) {
+    _build();
+  }
+
+  void _build() {
+    final widthHalf = width / 2;
+    final heightHalf = height / 2;
+
+    final gridX = widthSegments;
+    final gridY = heightSegments;
+
+    final gridX1 = gridX + 1;
+    final gridY1 = gridY + 1;
+
+    final segmentWidth = width / gridX;
+    final segmentHeight = height / gridY;
+
+    for (var iy = 0; iy < gridY1; iy++) {
+      final y = iy * segmentHeight - heightHalf;
+
+      for (var ix = 0; ix < gridX1; ix++) {
+        final x = ix * segmentWidth - widthHalf;
+
+        positions.addAll([x, -y, 0]);
+        normals.addAll([0, 0, 1]);
+
+        uvs.add(ix / gridX);
+        uvs.add(1 - (iy / gridY));
+      }
+    }
+
+    for (var iy = 0; iy < gridY; iy++) {
+      for (var ix = 0; ix < gridX; ix++) {
+        final a = ix + gridX1 * iy;
+        final b = ix + gridX1 * (iy + 1);
+        final c = (ix + 1) + gridX1 * (iy + 1);
+        final d = (ix + 1) + gridX1 * iy;
+
+        indices.addAll([a, b, d]);
+        indices.addAll([b, c, d]);
+      }
+    }
+  }
+}
+=== lib/src/geometry/fiber3d_polyhedron.dart
+import 'dart:math';
+
+/// A polyhedron is a solid in three dimensions with flat faces. Takes a
+/// set of base vertices/indices, subdivides them for smoothness, then
+/// projects everything onto a sphere of the given radius.
+///
+/// Ported from three.js's `PolyhedronGeometry`
+/// (src/geometries/PolyhedronGeometry.js). Produces non-indexed
+/// (triangle-soup) geometry, same as the original each triangle owns
+/// its own 3 vertices, which is what lets detail=0 (the default) render
+/// with sharp flat-shaded faces via one normal per triangle. A
+/// sequential index list (0, 1, 2, 3, ...) is generated here so this
+/// still fits flutter_fiber's indexed-draw pipeline without changing
+/// the vertex layout.
+class Fiber3DPolyhedron {
+  final List<double> baseVertices;
+  final List<int> baseIndices;
+  final double radius;
+  final int detail;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  Fiber3DPolyhedron(
+    this.baseVertices,
+    this.baseIndices, {
+    this.radius = 1,
+    this.detail = 0,
+  }) {
+    _build();
+  }
+
+  List<double> _getVertexByIndex(int index) {
+    final stride = index * 3;
+    return [
+      baseVertices[stride],
+      baseVertices[stride + 1],
+      baseVertices[stride + 2],
+    ];
+  }
+
+  List<double> _lerp3(List<double> a, List<double> b, double t) {
+    return [
+      a[0] + (b[0] - a[0]) * t,
+      a[1] + (b[1] - a[1]) * t,
+      a[2] + (b[2] - a[2]) * t,
+    ];
+  }
+
+  void _pushVertex(List<double> v) {
+    positions.addAll([v[0], v[1], v[2]]);
+  }
+
+  void _subdivideFace(
+    List<double> a,
+    List<double> b,
+    List<double> c,
+    int detail,
+  ) {
+    final cols = detail + 1;
+
+    // v[i][j] grid used to build the subdivision, matching the source's
+    // structure exactly (ragged: row length shrinks as i grows).
+    final v = List.generate(cols + 1, (_) => <List<double>>[]);
+
+    for (var i = 0; i <= cols; i++) {
+      final aj = _lerp3(a, c, i / cols);
+      final bj = _lerp3(b, c, i / cols);
+
+      final rows = cols - i;
+      for (var j = 0; j <= rows; j++) {
+        if (j == 0 && i == cols) {
+          v[i].add(aj);
+        } else {
+          v[i].add(_lerp3(aj, bj, j / rows));
+        }
+      }
+    }
+
+    for (var i = 0; i < cols; i++) {
+      for (var j = 0; j < 2 * (cols - i) - 1; j++) {
+        final k = (j / 2).floor();
+
+        if (j % 2 == 0) {
+          _pushVertex(v[i][k + 1]);
+          _pushVertex(v[i + 1][k]);
+          _pushVertex(v[i][k]);
+        } else {
+          _pushVertex(v[i][k + 1]);
+          _pushVertex(v[i + 1][k + 1]);
+          _pushVertex(v[i + 1][k]);
+        }
+      }
+    }
+  }
+
+  void _subdivide(int detail) {
+    for (var i = 0; i < baseIndices.length; i += 3) {
+      final a = _getVertexByIndex(baseIndices[i]);
+      final b = _getVertexByIndex(baseIndices[i + 1]);
+      final c = _getVertexByIndex(baseIndices[i + 2]);
+      _subdivideFace(a, b, c, detail);
+    }
+  }
+
+  void _applyRadius(double radius) {
+    for (var i = 0; i < positions.length; i += 3) {
+      var x = positions[i], y = positions[i + 1], z = positions[i + 2];
+      final len = sqrt(x * x + y * y + z * z);
+      if (len > 0) {
+        x = x / len * radius;
+        y = y / len * radius;
+        z = z / len * radius;
+      }
+      positions[i] = x;
+      positions[i + 1] = y;
+      positions[i + 2] = z;
+    }
+  }
+
+  double _azimuth(double x, double y, double z) => atan2(z, -x);
+  double _inclination(double x, double y, double z) =>
+      atan2(-y, sqrt(x * x + z * z));
+
+  void _generateUVs() {
+    for (var i = 0; i < positions.length; i += 3) {
+      final x = positions[i], y = positions[i + 1], z = positions[i + 2];
+      final u = _azimuth(x, y, z) / 2 / pi + 0.5;
+      final vv = _inclination(x, y, z) / pi + 0.5;
+      uvs.addAll([u, 1 - vv]);
+    }
+
+    _correctUVs();
+    _correctSeam();
+  }
+
+  void _correctSeam() {
+    // Handle a face straddling the UV seam (three.js issue #3269).
+    for (var i = 0; i < uvs.length; i += 6) {
+      final x0 = uvs[i], x1 = uvs[i + 2], x2 = uvs[i + 4];
+      final maxX = [x0, x1, x2].reduce(max);
+      final minX = [x0, x1, x2].reduce(min);
+
+      // 0.9/0.1 thresholds are arbitrary, matching the source.
+      if (maxX > 0.9 && minX < 0.1) {
+        if (x0 < 0.2) uvs[i] += 1;
+        if (x1 < 0.2) uvs[i + 2] += 1;
+        if (x2 < 0.2) uvs[i + 4] += 1;
+      }
+    }
+  }
+
+  void _correctUV(int stride, double origU, double vx, double vz, double azi) {
+    if (azi < 0 && origU == 1) {
+      uvs[stride] = origU - 1;
+    }
+    if (vx == 0 && vz == 0) {
+      uvs[stride] = azi / 2 / pi + 0.5;
+    }
+  }
+
+  void _correctUVs() {
+    var i = 0, j = 0;
+    while (i < positions.length) {
+      final ax = positions[i], ay = positions[i + 1], az = positions[i + 2];
+      final bx = positions[i + 3], by = positions[i + 4], bz = positions[i + 5];
+      final cx = positions[i + 6], cy = positions[i + 7], cz = positions[i + 8];
+
+      final uvAx = uvs[j], uvBx = uvs[j + 2], uvCx = uvs[j + 4];
+
+      final centroidX = (ax + bx + cx) / 3;
+      final centroidY = (ay + by + cy) / 3;
+      final centroidZ = (az + bz + cz) / 3;
+      final azi = _azimuth(centroidX, centroidY, centroidZ);
+
+      _correctUV(j, uvAx, ax, az, azi);
+      _correctUV(j + 2, uvBx, bx, bz, azi);
+      _correctUV(j + 4, uvCx, cx, cz, azi);
+
+      i += 9;
+      j += 6;
+    }
+  }
+
+  void _computeFlatNormals() {
+    // Non-indexed triangle soup: one face normal per triangle, assigned
+    // to all 3 of that triangle's vertices  matches three.js's
+    // computeVertexNormals() when there's no index buffer.
+    normals
+      ..clear()
+      ..addAll(List<double>.filled(positions.length, 0.0));
+
+    for (var i = 0; i < positions.length; i += 9) {
+      final ax = positions[i], ay = positions[i + 1], az = positions[i + 2];
+      final bx = positions[i + 3], by = positions[i + 4], bz = positions[i + 5];
+      final cx = positions[i + 6], cy = positions[i + 7], cz = positions[i + 8];
+
+      // cb = C - B, ab = A - B, normal = cross(cb, ab) exact order
+      // three.js uses, then normalized.
+      final cbx = cx - bx, cby = cy - by, cbz = cz - bz;
+      final abx = ax - bx, aby = ay - by, abz = az - bz;
+
+      var nx = cby * abz - cbz * aby;
+      var ny = cbz * abx - cbx * abz;
+      var nz = cbx * aby - cby * abx;
+
+      final len = sqrt(nx * nx + ny * ny + nz * nz);
+      if (len > 0) {
+        nx /= len;
+        ny /= len;
+        nz /= len;
+      }
+
+      for (var v = 0; v < 3; v++) {
+        normals[i + v * 3] = nx;
+        normals[i + v * 3 + 1] = ny;
+        normals[i + v * 3 + 2] = nz;
+      }
+    }
+  }
+
+  void _computeSmoothNormals() {
+    // detail > 0: normals start as a copy of the (already sphere-radius
+    // scaled) positions, then get normalized to unit length in place
+    // an approximation of the true sphere normal that improves as
+    // subdivision detail increases.
+    normals
+      ..clear()
+      ..addAll(positions);
+
+    for (var i = 0; i < normals.length; i += 3) {
+      final x = normals[i], y = normals[i + 1], z = normals[i + 2];
+      final len = sqrt(x * x + y * y + z * z);
+      if (len > 0) {
+        normals[i] = x / len;
+        normals[i + 1] = y / len;
+        normals[i + 2] = z / len;
+      }
+    }
+  }
+
+  void _build() {
+    _subdivide(detail);
+    _applyRadius(radius);
+    _generateUVs();
+
+    if (detail == 0) {
+      _computeFlatNormals();
+    } else {
+      _computeSmoothNormals();
+    }
+
+    // Non-indexed source data sequential index list keeps this
+    // compatible with flutter_fiber's indexed-draw pipeline without
+    // altering the vertex layout (still no sharing between triangles,
+    // same as the original).
+    for (var i = 0; i < positions.length ~/ 3; i++) {
+      indices.add(i);
+    }
+  }
+}
+=== lib/src/geometry/fiber3d_prism.dart
+import 'dart:math';
+
+/// A true N-sided prism: [sides] flat rectangular side faces around a
+/// regular N-gon cross-section, capped top and bottom.
+///
+/// Distinct from Fiber3DCylinder with a low [sides] count: Cylinder's
+/// side normals are smoothly interpolated (normalize(sinTheta, slope,
+/// cosTheta)), so it always reads as a faceted approximation of a
+/// smooth curved surface, even at low radialSegments. A prism's side
+/// faces are flat by construction — each face gets its own 4 unique
+/// vertices sharing one outward-facing normal (the face's own midpoint
+/// direction), baked into the geometry itself, not a
+/// material.flatShading duplicate-vertex hack applied at render time.
+///
+/// Caps reuse Fiber3DCylinder's own N-gon fan approach exactly (one
+/// duplicated center vertex per segment, for correct per-slice UVs) —
+/// that part of Cylinder's cap generation is already the right shape
+/// for a flat polygon and needs no change.
+class Fiber3DPrism {
+  final double radius;
+  final double height;
+  final int sides;
+  final double thetaStart;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  int _index = 0;
+  late final double _halfHeight;
+  late final int _sides;
+
+  Fiber3DPrism({
+    this.radius = 1,
+    this.height = 1,
+    int sides = 6,
+    this.thetaStart = 0,
+  }) : sides = sides {
+    // A prism needs at least 3 sides to enclose a volume.
+    _sides = sides < 3 ? 3 : sides;
+    _halfHeight = height / 2;
+    _generateSides();
+    _generateCap(true);
+    _generateCap(false);
+  }
+
+  void _generateSides() {
+    final segmentAngle = 2 * pi / _sides;
+
+    for (var i = 0; i < _sides; i++) {
+      final theta0 = thetaStart + i * segmentAngle;
+      final theta1 = thetaStart + (i + 1) * segmentAngle;
+      final mid = (theta0 + theta1) / 2;
+
+      final sinT0 = sin(theta0), cosT0 = cos(theta0);
+      final sinT1 = sin(theta1), cosT1 = cos(theta1);
+
+      // One flat normal for the whole face, pointing straight out
+      // through the face's angular midpoint.
+      final nx = sin(mid), nz = cos(mid);
+
+      // Same a/b/c/d -> [a,b,d],[b,c,d] winding Cylinder's torso uses:
+      // a=top-left, b=bottom-left, c=bottom-right, d=top-right.
+      positions.addAll([radius * sinT0, _halfHeight, radius * cosT0]); // a
+      positions.addAll([radius * sinT0, -_halfHeight, radius * cosT0]); // b
+      positions.addAll([radius * sinT1, -_halfHeight, radius * cosT1]); // c
+      positions.addAll([radius * sinT1, _halfHeight, radius * cosT1]); // d
+
+=== lib/src/geometry/fiber3d_ring.dart
+import 'dart:math';
+
+class Fiber3DRing {
+  final double innerRadius;
+  final double outerRadius;
+  final int thetaSegments;
+  final int phiSegments;
+  final double thetaStart;
+  final double thetaLength;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  Fiber3DRing({
+    this.innerRadius = 0.5,
+    this.outerRadius = 1,
+    int thetaSegments = 32,
+    int phiSegments = 1,
+    this.thetaStart = 0,
+    this.thetaLength = pi * 2,
+  }) : thetaSegments = max(3, thetaSegments),
+       phiSegments = max(1, phiSegments) {
+    _build();
+  }
+
+  void _build() {
+    var radius = innerRadius;
+    final radiusStep = (outerRadius - innerRadius) / phiSegments;
+
+    for (var j = 0; j <= phiSegments; j++) {
+      for (var i = 0; i <= thetaSegments; i++) {
+        final segment = thetaStart + i / thetaSegments * thetaLength;
+
+        final x = radius * cos(segment);
+        final y = radius * sin(segment);
+
+        positions.addAll([x, y, 0]);
+        normals.addAll([0, 0, 1]);
+
+        final u = (x / outerRadius + 1) / 2;
+        final v = (y / outerRadius + 1) / 2;
+        uvs.addAll([u, v]);
+      }
+
+      radius += radiusStep;
+    }
+
+    for (var j = 0; j < phiSegments; j++) {
+      final thetaSegmentLevel = j * (thetaSegments + 1);
+
+      for (var i = 0; i < thetaSegments; i++) {
+        final segment = i + thetaSegmentLevel;
+
+        final a = segment;
+        final b = segment + thetaSegments + 1;
+        final c = segment + thetaSegments + 2;
+        final d = segment + 1;
+
+        indices.addAll([a, b, d]);
+        indices.addAll([b, c, d]);
+      }
+    }
+  }
+}
+=== lib/src/geometry/fiber3d_sphere.dart
+import 'dart:math';
+
+class Fiber3DSphere {
+  final double radius;
+  final int widthSegments;
+  final int heightSegments;
+  final double phiStart;
+  final double phiLength;
+  final double thetaStart;
+  final double thetaLength;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+
+  List<double>? colors;
+
+  final List<int> indices = [];
+  Fiber3DSphere({
+    this.radius = 1,
+    int widthSegments = 32,
+    int heightSegments = 16,
+    this.phiStart = 0,
+    this.phiLength = pi * 2,
+    this.thetaStart = 0,
+    this.thetaLength = pi,
+  })  : widthSegments = max(3, widthSegments),
+        heightSegments = max(2, heightSegments) {
+    _build();
+  }
+
+  void _build() {
+    final thetaEnd = min(thetaStart + thetaLength, pi);
+
+    var index = 0;
+    final grid = <List<int>>[];
+
+    for (var iy = 0; iy <= heightSegments; iy++) {
+      final verticesRow = <int>[];
+
+      final v = iy / heightSegments;
+      final theta = thetaStart + v * thetaLength;
+
+      final y = radius * cos(theta);
+      final ringRadius = sqrt(radius * radius - y * y);
+
+      var uOffset = 0.0;
+
+      if (iy == 0 && thetaStart == 0) {
+        uOffset = 0.5 / widthSegments;
+      } else if (iy == heightSegments && thetaEnd == pi) {
+        uOffset = -0.5 / widthSegments;
+      }
+
+      for (var ix = 0; ix <= widthSegments; ix++) {
+        final u = ix / widthSegments;
+        final phi = phiStart + u * phiLength;
+
+        final x = -ringRadius * cos(phi);
+        final z = ringRadius * sin(phi);
+
+        positions.addAll([x, y, z]);
+
+        // Normal = normalized vertex position (sphere is origin-centered).
+        final len = sqrt(x * x + y * y + z * z);
+        if (len > 0) {
+          normals.addAll([x / len, y / len, z / len]);
+        } else {
+          normals.addAll([0, 0, 0]);
+        }
+=== lib/src/geometry/fiber3d_spring.dart
+import 'dart:math';
+
+/// A coiled helix/spring: a small circular cross-section swept along a
+/// helical path. Built with a direct parametric formula rather than a
+/// general curve system, since a helix has a simple closed-form
+/// equation no curve/path subsystem needed.
+///
+/// Original to flutter_fiber no three.js equivalent.
+class Fiber3DSpring {
+  /// Radius of the helix itself (distance from the central axis to the
+  /// center of the coil).
+  final double radius;
+
+  /// Radius of the tube/wire making up the coil.
+  final double tubeRadius;
+
+  /// Number of full turns of the coil.
+  final double turns;
+
+  /// Vertical distance covered by one full turn.
+  final double pitch;
+
+  /// Segments along the helix's length, per turn.
+  final int radialSegments;
+
+  /// Segments around the tube's own circular cross-section.
+  final int tubularSegments;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  Fiber3DSpring({
+    this.radius = 1,
+    this.tubeRadius = 0.15,
+    this.turns = 4,
+    this.pitch = 0.5,
+    int radialSegments = 16,
+    int tubularSegments = 8,
+  }) : radialSegments = max(3, radialSegments),
+       tubularSegments = max(3, tubularSegments) {
+    _build();
+  }
+
+  void _build() {
+    final totalSegments = (turns * radialSegments).round();
+    final totalAngle = turns * pi * 2;
+
+    for (var i = 0; i <= totalSegments; i++) {
+      final t = i / totalSegments;
+      final theta = t * totalAngle;
+
+      // Center of the helix's path at this point.
+      final centerX = radius * cos(theta);
+      final centerY = t * turns * pitch;
+      final centerZ = radius * sin(theta);
+
+      // Tangent direction along the helix path (derivative of the
+      // center curve w.r.t. theta), used to build a local frame for
+      // the tube's circular cross-section.
+      final tangentX = -sin(theta);
+      final tangentY = pitch / (2 * pi);
+      final tangentZ = cos(theta);
+      final tangentLen = sqrt(
+        tangentX * tangentX + tangentY * tangentY + tangentZ * tangentZ,
+      );
+      final tx = tangentX / tangentLen;
+      final ty = tangentY / tangentLen;
+=== lib/src/geometry/fiber3d_star.dart
+import 'dart:math';
+
+/// A flat, filled N-pointed star (or gear silhouette, when points is
+/// high and the two radii are close together) or a solid, extruded
+/// version of the same outline when `depth` is greater than 0.
+///
+/// The outline alternates between `outerRadius` (points) and
+/// `innerRadius` (valleys) as it sweeps around, same construction as
+/// Fiber3DCircle's triangle fan.
+///
+/// Original to flutter_fiber no three.js equivalent.
+class Fiber3DStar {
+  final double outerRadius;
+  final double innerRadius;
+  final int points;
+
+  /// Thickness of the star along Z. `0` (the default) gives the
+  /// original flat, single-sided star same behavior as before this
+  /// parameter existed. Any positive value gives a solid star with a
+  /// front face, back face, and connecting side walls.
+  final double depth;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  Fiber3DStar({
+    this.outerRadius = 1,
+    this.innerRadius = 0.5,
+    int points = 5,
+    this.depth = 0,
+  }) : points = max(3, points) {
+    if (depth <= 0) {
+      _buildFlat();
+    } else {
+      _buildSolid();
+    }
+  }
+
+  /// Original flat construction — a center vertex plus a triangle fan,
+  /// single-sided (normal points +Z only), unchanged from before.
+  void _buildFlat() {
+    positions.addAll([0, 0, 0]);
+    normals.addAll([0, 0, 1]);
+    uvs.addAll([0.5, 0.5]);
+
+    final segments = points * 2;
+
+    for (var s = 0; s <= segments; s++) {
+      final angle = (s / segments) * pi * 2;
+      final radius = (s % 2 == 0) ? outerRadius : innerRadius;
+
+      final vx = radius * cos(angle);
+      final vy = radius * sin(angle);
+
+      positions.addAll([vx, vy, 0]);
+      normals.addAll([0, 0, 1]);
+
+      final u = (vx / outerRadius + 1) / 2;
+      final v = (vy / outerRadius + 1) / 2;
+      uvs.addAll([u, v]);
+    }
+
+    for (var i = 1; i <= segments; i++) {
+      indices.addAll([i, i + 1, 0]);
+    }
+  }
+
+=== lib/src/geometry/fiber3d_tetrahedron.dart
+import 'fiber3d_polyhedron.dart';
+
+class Fiber3DTetrahedron extends Fiber3DPolyhedron {
+  Fiber3DTetrahedron({double radius = 1, int detail = 0})
+      : super(_vertices, _indices, radius: radius, detail: detail);
+
+  static const List<double> _vertices = [
+    1, 1, 1, -1, -1, 1, -1, 1, -1, 1, -1, -1,
+  ];
+
+  static const List<int> _indices = [
+    2, 1, 0, 0, 3, 2, 1, 3, 0, 2, 3, 1,
+  ];
+}=== lib/src/geometry/fiber3d_torus.dart
+import 'dart:math';
+
+/// A geometry class for representing a torus.
+///
+/// Ported from three.js's `TorusGeometry` (src/geometries/TorusGeometry.js).
+class Fiber3DTorus {
+  final double radius;
+  final double tube;
+  final int radialSegments;
+  final int tubularSegments;
+  final double arc;
+  final double thetaStart;
+  final double thetaLength;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  Fiber3DTorus({
+    this.radius = 1,
+    this.tube = 0.4,
+    int radialSegments = 12,
+    int tubularSegments = 48,
+    this.arc = pi * 2,
+    this.thetaStart = 0,
+    this.thetaLength = pi * 2,
+  }) : radialSegments = radialSegments.floor(),
+       tubularSegments = tubularSegments.floor() {
+    _build();
+  }
+
+  void _build() {
+    for (var j = 0; j <= radialSegments; j++) {
+      final v = thetaStart + (j / radialSegments) * thetaLength;
+
+      for (var i = 0; i <= tubularSegments; i++) {
+        final u = i / tubularSegments * arc;
+
+        // vertex
+        final vx = (radius + tube * cos(v)) * cos(u);
+        final vy = (radius + tube * cos(v)) * sin(u);
+        final vz = tube * sin(v);
+
+        positions.addAll([vx, vy, vz]);
+
+        // normal — direction from the tube's center circle to the vertex
+        final centerX = radius * cos(u);
+        final centerY = radius * sin(u);
+
+        var nx = vx - centerX;
+        var ny = vy - centerY;
+        var nz = vz - 0.0;
+
+        final len = sqrt(nx * nx + ny * ny + nz * nz);
+        if (len > 0) {
+          nx /= len;
+          ny /= len;
+          nz /= len;
+        }
+
+        normals.addAll([nx, ny, nz]);
+
+        // uv
+        uvs.add(i / tubularSegments);
+        uvs.add(j / radialSegments);
+      }
+    }
+
+=== lib/src/geometry/fiber3d_torus_knot.dart
+import 'dart:math';
+
+/// Creates a torus knot, the particular shape of which is defined by a
+/// pair of coprime integers, p and q. If p and q are not coprime, the
+/// result will be a torus link.
+///
+/// Ported from three.js's `TorusKnotGeometry`
+/// (src/geometries/TorusKnotGeometry.js).
+class Fiber3DTorusKnot {
+  final double radius;
+  final double tube;
+  final int tubularSegments;
+  final int radialSegments;
+  final double p;
+  final double q;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors;
+  final List<int> indices = [];
+
+  Fiber3DTorusKnot({
+    this.radius = 1,
+    this.tube = 0.4,
+    int tubularSegments = 64,
+    int radialSegments = 8,
+    this.p = 2,
+    this.q = 3,
+  }) : tubularSegments = tubularSegments.floor(),
+       radialSegments = radialSegments.floor() {
+    _build();
+  }
+
+  // Calculates the current position on the torus curve for parameter u.
+  List<double> _calculatePositionOnCurve(double u) {
+    final cu = cos(u);
+    final su = sin(u);
+    final quOverP = q / p * u;
+    final cs = cos(quOverP);
+
+    final x = radius * (2 + cs) * 0.5 * cu;
+    final y = radius * (2 + cs) * su * 0.5;
+    final z = radius * sin(quOverP) * 0.5;
+
+    return [x, y, z];
+  }
+
+  void _build() {
+    for (var i = 0; i <= tubularSegments; i++) {
+      // The radian "u" gives the position on the torus curve for this
+      // tubular segment.
+      final u = i / tubularSegments * p * pi * 2;
+
+      // P1 is the current position on the curve, P2 is a little farther
+      // ahead — used to build an orthonormal basis (B, N) at this point.
+      final p1 = _calculatePositionOnCurve(u);
+      final p2 = _calculatePositionOnCurve(u + 0.01);
+
+      final p1x = p1[0], p1y = p1[1], p1z = p1[2];
+      final p2x = p2[0], p2y = p2[1], p2z = p2[2];
+
+      // T = P2 - P1, N = P2 + P1 (temporary, before orthogonalizing)
+      final tx = p2x - p1x, ty = p2y - p1y, tz = p2z - p1z;
+      var nx = p2x + p1x, ny = p2y + p1y, nz = p2z + p1z;
+
+      // B = T x N
+      var bx = ty * nz - tz * ny;
+      var by = tz * nx - tx * nz;
+      var bz = tx * ny - ty * nx;
+=== lib/src/geometry/fiber3d_wedge.dart
+/// A ramp/doorstop shape: a right-triangular-prism, essentially a box
+/// where one edge collapses to a line instead of staying a full face
+/// full height at the back, tapering down to flat at the front.
+///
+/// Original to flutter_fiber no three.js equivalent. Built the same
+/// way as a flat-shaded box: each of the 5 faces gets its own
+/// duplicated vertices and a single constant per-face normal, so it
+/// renders with crisp, well-defined edges by default (flatShading has
+/// no additional effect on this shape, since every face is already flat
+/// by construction).
+class Fiber3DWedge {
+  final double width;
+  final double height;
+  final double depth;
+
+  final List<double> positions = [];
+  final List<double> normals = [];
+  final List<double> uvs = [];
+  List<double>? colors; 
+  final List<int> indices = [];
+
+  Fiber3DWedge({this.width = 1, this.height = 1, this.depth = 1}) {
+    _build();
+  }
+
+  void _build() {
+    final w = width / 2;
+    final h = height;
+    final d = depth / 2;
+
+    // Six corners of the wedge. "Back" = full height (z = -d),
+    // "front" = collapsed to the ground (z = +d).
+    final a = [-w, 0.0, -d]; // back-bottom-left
+    final b = [w, 0.0, -d]; // back-bottom-right
+    final c = [-w, h, -d]; // back-top-left
+    final d_ = [w, h, -d]; // back-top-right
+    final e = [-w, 0.0, d]; // front-bottom-left
+    final f = [w, 0.0, d]; // front-bottom-right
+
+    // Bottom face.
+    _addQuad(a, b, f, e, [0, -1, 0]);
+
+    // Back (vertical) face.
+    _addQuad(a, c, d_, b, [0, 0, -1]);
+
+    // Sloped ramp surface normal computed from the actual slope
+    // geometry rather than assumed axis-aligned, since it's tilted.
+    final slopeNormal = _normalize([0, depth, height]);
+    _addQuad(c, e, f, d_, slopeNormal);
+
+    // Left and right triangular end caps.
+    _addTriangle(a, e, c, [-1, 0, 0]);
+    _addTriangle(b, d_, f, [1, 0, 0]);
+  }
+
+  List<double> _normalize(List<double> v) {
+    final len = _len(v);
+    if (len == 0) return [0, 0, 0];
+    return [v[0] / len, v[1] / len, v[2] / len];
+  }
+
+  double _len(List<double> v) => (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) == 0
+      ? 0
+      : _sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+
+  double _sqrt(double x) {
+    if (x <= 0) return 0;
+    double guess = x / 2;
+    for (var i = 0; i < 20; i++) {
+      guess = 0.5 * (guess + x / guess);
+=== lib/src/camera/fiber3d_orbit_controls.dart
+import 'dart:math';
+import '../core/fiber3d_vector3.dart';
+import 'fiber3d_camera.dart';
+
+/// Orbit controls: lets the camera orbit around a target via drag, and
+/// zoom via pinch/dolly.
+///
+/// A scoped-down port of three.js's `OrbitControls` addon, matching what
+/// the PRD's own usage example needs (`orbitEnabled: true`) — damping/
+/// inertia, panning, keyboard controls, auto-rotate, mouse-button
+/// switching, and screen-space panning mode are all dropped. The orbit
+/// math (spherical coordinates around a target, ported from
+/// OrbitControls' update()/_rotateLeft/_rotateUp) and pinch-zoom distance
+/// clamping (_dollyIn/_dollyOut/_clampDistance) are kept.
+class Fiber3DOrbitControls {
+  final Fiber3DVector3 target;
+  final double minDistance;
+  final double maxDistance;
+  final double rotateSpeed;
+  final double zoomSpeed;
+
+  // Preserved from the seed camera — orbiting/zooming only ever changes
+  // position, never these.
+  final double _fov;
+  final double _aspect;
+  final double _near;
+  final double _far;
+
+  double _radius = 0;
+  double _theta = 0;
+  double _phi = 0;
+
+  static const double _epsilon = 1e-6;
+
+  Fiber3DOrbitControls({
+    required Fiber3DCamera camera,
+    this.target = const Fiber3DVector3.zero(),
+    this.minDistance = 0,
+    this.maxDistance = double.infinity,
+    this.rotateSpeed = 1.0,
+    this.zoomSpeed = 1.0,
+  })  : _fov = camera.fov,
+        _aspect = camera.aspect,
+        _near = camera.near,
+        _far = camera.far {
+    _setFromPosition(camera.position);
+  }
+
+  void _setFromPosition(Fiber3DVector3 position) {
+    final dx = position.x - target.x;
+=== lib/src/core/fiber3d_matrix4.dart
+import 'dart:math';
+import 'fiber3d_vector3.dart';
+import 'fiber3d_mutable_vector3.dart';
+import 'fiber3d_quaternion.dart';
+
+/// A 4x4 matrix, stored in column-major order matching three.js's Matrix4
+/// internal layout exactly this makes porting its matrix math a direct,
+/// index-for-index translation, and column-major is also the layout
+/// OpenGL's uniformMatrix4fv expects natively.
+class Fiber3DMatrix4 {
+  final List<double> elements;
+
+  Fiber3DMatrix4() : elements = _identityList();
+
+  Fiber3DMatrix4.fromList(List<double> values)
+      : elements = List<double>.from(values);
+
+  static List<double> _identityList() => [
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+      ];
+
+  void identity() => elements.setAll(0, _identityList());
+
+  Fiber3DMatrix4 clone() => Fiber3DMatrix4.fromList(elements);
+
+  void setPosition(double x, double y, double z) {
+    elements[12] = x;
+    elements[13] = y;
+    elements[14] = z;
+  }
+
+  /// Post-multiplies this matrix by [m] (this = this * m).
+  void multiply(Fiber3DMatrix4 m) {
+    multiplyMatrices(clone(), m);
+  }
+
+  /// Pre-multiplies this matrix by [m] (this = m * this).
+  void premultiply(Fiber3DMatrix4 m) {
+    multiplyMatrices(m, clone());
+  }
+
+  /// Ported from three.js's Matrix4.multiplyMatrices.
+  void multiplyMatrices(Fiber3DMatrix4 a, Fiber3DMatrix4 b) {
+    final ae = a.elements;
+    final be = b.elements;
+    final te = elements;
+
+=== lib/src/core/fiber3d_quaternion.dart
+import 'dart:math';
+import 'fiber3d_matrix4.dart';
+import 'fiber3d_vector3.dart';
+
+/// A quaternion, used to represent rotations for [Fiber3DObject] and
+/// [Fiber3DCamera].
+///
+/// Ported from three.js's `Quaternion`, scoped to what a mutable scene
+/// graph actually needs: construction/conversion, composition, and
+/// normalization. Slerp/rotateTowards/angleTo (animation-blending only)
+/// and array/JSON serialization are dropped — no animation system or
+/// save/load format exists yet.
+
+class Fiber3DQuaternion {
+  double x;
+  double y;
+  double z;
+  double w;
+
+  /// Fired on most mutations — same cross-sync mechanism as
+  /// [Fiber3DMutableVector3.onChange], used by Fiber3DObject to keep
+  /// rotation (Euler) in sync when the quaternion is changed directly
+  /// (e.g. via rotateOnAxis/applyQuaternion), not just the other way
+  /// around.
+  void Function()? onChange;
+
+  Fiber3DQuaternion([this.x = 0, this.y = 0, this.z = 0, this.w = 1]);
+
+  Fiber3DQuaternion.identity() : x = 0, y = 0, z = 0, w = 1;
+
+  void set(double x, double y, double z, double w) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+    this.w = w;
+    onChange?.call();
+  }
+
+  void copy(Fiber3DQuaternion q) {
+    x = q.x;
+    y = q.y;
+    z = q.z;
+    w = q.w;
+    onChange?.call();
+  }
+
+  Fiber3DQuaternion clone() => Fiber3DQuaternion(x, y, z, w);
+
+  void identityReset() {
+    x = 0;
+=== lib/src/core/fiber3d_ray.dart
+import 'dart:math';
+import 'fiber3d_vector3.dart';
+
+/// A ray with an origin and normalized direction, used for hit-testing
+/// (tap/pan) against meshes.
+///
+/// Ported from three.js's `Ray`, scoped to what flutter_fiber v1 actually
+/// needs: bounding-sphere intersection only. Per-triangle intersection,
+/// box/plane intersection, and line-segment distance are all dropped —
+/// coarse-first approach three.js's own Raycaster uses before it ever
+/// checks triangles), not exact per-triangle picking.
+class Fiber3DRay {
+  final Fiber3DVector3 origin;
+  final Fiber3DVector3 direction;
+
+  const Fiber3DRay({required this.origin, required this.direction});
+
+  /// Returns the distance along the ray to the closest intersection with
+  /// a sphere at [center] with the given [radius], or null if there is
+  /// no intersection. Ported from three.js's Ray.intersectSphere.
+  double? intersectSphereDistance(Fiber3DVector3 center, double radius) {
+    if (radius < 0) return null;
+
+    final vx = center.x - origin.x;
+    final vy = center.y - origin.y;
+    final vz = center.z - origin.z;
+
+    final tca = vx * direction.x + vy * direction.y + vz * direction.z;
+    final d2 = (vx * vx + vy * vy + vz * vz) - tca * tca;
+    final radius2 = radius * radius;
+
+    if (d2 > radius2) return null;
+
+    final thc = sqrt(radius2 - d2);
+
+    final t0 = tca - thc;
+    final t1 = tca + thc;
+
+    if (t1 < 0) return null;
+    if (t0 < 0) return t1;
+    return t0;
+  }
+}=== lib/src/core/fiber3d_color.dart
+import 'dart:math';
+import 'fiber3d_color_management.dart';
+
+class Fiber3DColor {
+  double r;
+  double g;
+  double b;
+
+  static final List<double> _scratch = List<double>.filled(3, 0);
+
+  /// Creates a color from linear components (default white). No
+  /// conversion is applied, matching three.js's `setRGB` default.
+  Fiber3DColor([this.r = 1, this.g = 1, this.b = 1]);
+
+  /// Creates a color from a 0xRRGGBB int. [colorSpace] defaults to sRGB,
+  /// so the value is converted into the linear working space.
+  Fiber3DColor.fromHex(
+    int hex, {
+    Fiber3DColorSpace colorSpace = Fiber3DColorSpace.srgb,
+  }) : r = 1,
+       g = 1,
+       b = 1 {
+    setHex(hex, colorSpace: colorSpace);
+  }
+
+  Fiber3DColor setScalar(double scalar) {
+    r = scalar;
+    g = scalar;
+    b = scalar;
+    return this;
+  }
+
+  Fiber3DColor setHex(
+    int hex, {
+    Fiber3DColorSpace colorSpace = Fiber3DColorSpace.srgb,
+  }) {
+    r = ((hex >> 16) & 255) / 255;
+    g = ((hex >> 8) & 255) / 255;
+    b = (hex & 255) / 255;
+
+    _toWorking(colorSpace);
+    return this;
+  }
+
+  Fiber3DColor setRGB(
+    double r,
+    double g,
+    double b, {
+    Fiber3DColorSpace colorSpace = Fiber3DColorManagement.workingColorSpace,
+  }) {
+=== lib/src/core/fiber3d_color_management.dart
+import 'dart:math';
+
+/// Color spaces flutter_fiber understands.
+///
+/// three.js identifies these with string constants (`NoColorSpace`,
+/// `SRGBColorSpace`, `LinearSRGBColorSpace`); an enum is the Dart
+/// equivalent since only these names are ever compared.
+enum Fiber3DColorSpace { none, srgb, linearSrgb }
+
+/// Transfer function of a color space.
+enum Fiber3DColorTransfer { linear, srgb }
+
+/// sRGB <-> linear conversion, so colors are lit in linear space and
+/// encoded back to sRGB for display.
+///
+/// Ported from three.js's `ColorManagement` (src/math/ColorManagement.js).
+/// Scoped to sRGB and linear sRGB, which share Rec.709 primaries, so the
+/// source's XYZ gamut-conversion branch (Matrix3) can never trigger and
+/// is dropped, along with the color-space registry, tone-mapping-mode,
+/// luminance-coefficient, drawing-buffer and unpack color space lookups.
+class Fiber3DColorManagement {
+  Fiber3DColorManagement._();
+
+  /// When false, [convert] returns colors untouched (three.js
+  /// `ColorManagement.enabled`).
+  static bool enabled = true;
+
+  /// Colors are stored and lit in linear sRGB.
+  static const Fiber3DColorSpace workingColorSpace =
+      Fiber3DColorSpace.linearSrgb;
+
+  /// Converts [rgb] (three components, modified in place and returned)
+  /// from [source] to [target].
+  static List<double> convert(
+    List<double> rgb,
+    Fiber3DColorSpace source,
+    Fiber3DColorSpace target,
+  ) {
+    if (!enabled ||
+        source == target ||
+        source == Fiber3DColorSpace.none ||
+        target == Fiber3DColorSpace.none) {
+      return rgb;
+    }
+
+    if (getTransfer(source) == Fiber3DColorTransfer.srgb) {
+      rgb[0] = srgbToLinear(rgb[0]);
+      rgb[1] = srgbToLinear(rgb[1]);
+      rgb[2] = srgbToLinear(rgb[2]);
+    }
+lib/src/material/fiber3d_prefiltered_cube.dart:6:typedef Fiber3DRadianceFunction =

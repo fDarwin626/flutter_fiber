@@ -1,13 +1,39 @@
-# Demo videos — docs/GitHub-only, not part of the published package.
-assets/*.mp4
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
 
-# Example app build artifacts — not source, shouldn't ship.
-example/build/
-example/android/app/libs/
-example/android/.gradle/
-example/.dart_tool/
-example/**/build/
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
 
-# Standard excludes
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+# Libraries should not include pubspec.lock, per https://dart.dev/guides/libraries/private-files#pubspeclock.
+/pubspec.lock
+**/doc/api/
 .dart_tool/
-build/
+.flutter-plugins-dependencies
+/build/
+/coverage/
+
+api_dump.txt
+flutter_fiber.iml
+example/assets/images/*.glb
+example/assets/images/*.jpeg
+example/assets/images/*.png
+
+

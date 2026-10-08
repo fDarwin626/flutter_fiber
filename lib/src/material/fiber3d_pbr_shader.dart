@@ -100,6 +100,7 @@ $resolved""";
 #define ENVMAP_TYPE_PMREM
 #define ENVMAP_MAX_LOD $envMapMaxLod.0
 #define USE_CLEARCOAT
+${outputColorSpace == Fiber3DColorSpace.srgb ? '#define DECODE_MAP_SRGB' : ''}
 
 uniform vec3 diffuse;
 uniform vec3 emissive;

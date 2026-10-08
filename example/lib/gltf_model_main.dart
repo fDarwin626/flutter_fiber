@@ -6,6 +6,7 @@ import 'package:flutter_fiber/src/core/fiber3d_vector3.dart';
 import 'package:flutter_fiber/src/light/fiber3d_ambient_light.dart';
 import 'package:flutter_fiber/src/light/fiber3d_point_light.dart';
 import 'package:flutter_fiber/src/camera/fiber3d_camera.dart';
+import 'package:flutter_fiber/src/material/fiber3d_procedural_sky.dart';
 
 void main() {
   runApp(const GltfModelDemo());
@@ -41,7 +42,7 @@ class _GltfModelDemoState extends State<GltfModelDemo> {
 
   Future<void> _load() async {
     try {
-      final data = await rootBundle.load('assets/images/motor.glb');
+      final data = await rootBundle.load('assets/images/car4.glb');
       final bytes = data.buffer.asUint8List();
       final scene = await Fiber3DGltfLoader.loadGlb(bytes);
       if (!mounted) return;
@@ -58,7 +59,7 @@ class _GltfModelDemoState extends State<GltfModelDemo> {
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('flutter_fiber: GLTF model (car.glb)'),
+          title: const Text('flutter_fiber: GLTF model'),
           backgroundColor: const Color.fromARGB(255, 56, 55, 55),
         ),
         body: _error != null
@@ -66,7 +67,7 @@ class _GltfModelDemoState extends State<GltfModelDemo> {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    'Failed to load car.glb:\n$_error',
+                    'Failed to load model:\n$_error',
                     style: const TextStyle(color: Colors.red),
                   ),
                 ),
@@ -74,14 +75,25 @@ class _GltfModelDemoState extends State<GltfModelDemo> {
             : _scene == null
                 ? const Center(child: CircularProgressIndicator())
                 : Fiber3DCanvas(
-                    backgroundColor: 0x303130,
+                    backgroundColor: 0x1a1a1a,
+                    toneMapping: Fiber3DToneMapping.acesFilmic,
+                    toneMappingExposure: 1.0,
+                    envMapSize: 256,
+                    envMapSamples: 64,
+                    envMapRadiance: Fiber3DProceduralSky(
+                      skyColor: const [0.55, 0.7, 0.95],
+                      horizonColor: const [0.85, 0.85, 0.88],
+                      groundColor: const [0.25, 0.24, 0.26],
+                      sunDirection: const [0.4, 0.7, 0.4],
+                      sunColor: const [6.0, 5.6, 5.0],
+                    ).radiance,
                     camera: Fiber3DCamera(
                       position: const Fiber3DVector3(0, 2, 8),
                       target: const Fiber3DVector3.zero(),
                     ),
                     orbitEnabled: true,
                     lights: const [
-                      Fiber3DAmbientLight(color: 0xffffff, intensity: 0.6),
+                      Fiber3DAmbientLight(color: 0xffffff, intensity: 0.3),
                       Fiber3DPointLight(
                         color: 0xffffff,
                         intensity: 3.0,
@@ -93,10 +105,8 @@ class _GltfModelDemoState extends State<GltfModelDemo> {
                         position: Fiber3DVector3(-4, 2, -2),
                       ),
                     ],
-
-                    // First guess at the scale mismatch -- bump this up
                     // or down based on what you actually see.
-                    children: [Fiber3DGltfModel(scene: _scene!, scale: 1.3)],                  ),
+                    children: [Fiber3DGltfModel(scene: _scene!, scale: 100.3)],                  ),
       ),
     );
   }

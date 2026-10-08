@@ -41,6 +41,7 @@ class Fiber3DGltfLoader {
     final materialsJson =
         (json['materials'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
 
+    
     final meshesJson =
         (json['meshes'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
     final decodedMeshes = meshesJson
@@ -120,7 +121,7 @@ class Fiber3DGltfLoader {
     return buffers;
   }
 
-  static Future<List<Fiber3DTexture>> _resolveTextures(
+  static Future<List<Fiber3DTexture?>> _resolveTextures(
     Map<String, dynamic> json,
     List<Map<String, dynamic>> bufferViews,
     List<Uint8List> buffers,
@@ -161,11 +162,13 @@ class Fiber3DGltfLoader {
 
     final texturesJson =
         (json['textures'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-    final textures = <Fiber3DTexture>[];
+    final textures = <Fiber3DTexture?>[];
     for (final texJson in texturesJson) {
       final sourceIndex = texJson['source'] as int?;
       if (sourceIndex != null && sourceIndex < decodedImages.length) {
         textures.add(decodedImages[sourceIndex]);
+      } else {
+        textures.add(null);
       }
     }
     return textures;
@@ -177,7 +180,7 @@ class Fiber3DGltfLoader {
     List<Map<String, dynamic>> bufferViews,
     List<Uint8List> buffers,
     List<Map<String, dynamic>> materialsJson,
-    List<Fiber3DTexture> textures,
+    List<Fiber3DTexture?> textures,
   ) {
     final primitivesJson =
         (meshJson['primitives'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
