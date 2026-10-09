@@ -42,7 +42,7 @@ class _GltfModelDemoState extends State<GltfModelDemo> {
 
   Future<void> _load() async {
     try {
-      final data = await rootBundle.load('assets/images/car4.glb');
+      final data = await rootBundle.load('assets/images/motor.glb');
       final bytes = data.buffer.asUint8List();
       final scene = await Fiber3DGltfLoader.loadGlb(bytes);
       if (!mounted) return;
@@ -106,7 +106,7 @@ class _GltfModelDemoState extends State<GltfModelDemo> {
                       ),
                     ],
                     // or down based on what you actually see.
-                    children: [Fiber3DGltfModel(scene: _scene!, scale: 100.3)],                  ),
+                    children: [Fiber3DGltfModel(scene: _scene!, scale: 1.5)],                  ),
       ),
     );
   }

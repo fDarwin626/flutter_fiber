@@ -33,7 +33,7 @@ A large feature release. It contains breaking changes, listed first.
 * No depth-sorted transparency; overlapping transparent meshes can show sorting artifacts.
 * Textures use UV set 0, clamp-to-edge wrapping and no mipmaps; only the standard material accepts textures.
 * No normal, emissive or occlusion maps; no directional or spot lights; no shadows.
-* glTF: external buffers/images, animations, skinning and `KHR_materials_*` extensions are not supported.
+* glTF: external buffers/images, animations and skinning are not supported. Only the clearcoat and emissive-strength `KHR_materials_*` extensions are read; the rest are ignored.
 
 ## 0.1.2
 

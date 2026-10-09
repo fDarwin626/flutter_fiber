@@ -1127,8 +1127,7 @@ Declare the model under `flutter: assets:` in your app's `pubspec.yaml`.
 - Primitives with more than 65,535 vertices (the loader throws a `FormatException`).
 - Non-triangle primitives (lines, points, strips, fans) are skipped. Skinning, morph targets, animations, cameras and lights in the file are ignored.
 - Normal, emissive and occlusion textures; `alphaMode: "MASK"` (treated as opaque); texture wrap modes and UV transforms; normalized (non-float) vertex colors.
-- `KHR_materials_*` extensions (specular, transmission, clearcoat, emissive strength) are ignored, so glass built with transmission renders as a plain alpha blend.
-
+- `KHR_materials_clearcoat` (clearcoat factors) and `KHR_materials_emissive_strength` are read. Other `KHR_materials_*` extensions (specular, transmission and the rest) are ignored, so glass built with transmission renders as a plain alpha blend.
 ---
 
 ## Lifecycle
